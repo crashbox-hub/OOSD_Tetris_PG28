@@ -38,7 +38,9 @@ public class MainMenuView extends AbstractScreen {
 
             var result = alert.showAndWait();
             if (result.isPresent() && result.get() == yes) {
-                exitBtn.getScene().getWindow().hide();
+                if (onExit != null) {
+                    onExit.run();
+                }
             }
         });
 
