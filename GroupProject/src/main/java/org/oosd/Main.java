@@ -21,9 +21,9 @@ public class Main extends Application {
         this.stage = stage;
 
         // One Scene; swap its root with different AbstractScreen instances
-        this.scene = new Scene(new StackPane(), 640, 480);
+        this.scene = new Scene(new StackPane(), 820, 680);
         stage.setScene(scene);
-        stage.setResizable(false);
+        stage.setResizable(true);
         stage.setTitle("Tetris - PG28");
         stage.show();
 
@@ -61,7 +61,7 @@ public class Main extends Application {
     }
 
     private void showGame() {
-        GameView game = new GameView();     // your existing gameplay screen (extends AbstractScreen)
+        GameView game = new GameView(this::showMainMenu); // pass callback
         setScreen(game);
         stage.setTitle("Tetris — Game");
     }

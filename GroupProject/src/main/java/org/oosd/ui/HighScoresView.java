@@ -33,6 +33,4 @@ public class HighScoresView extends AbstractScreen {
     public void onShow() { requestFocus(); }
     @Override
     public void onHide() { }
-    @Override
-    public void update(long nowNanos) { }
 }

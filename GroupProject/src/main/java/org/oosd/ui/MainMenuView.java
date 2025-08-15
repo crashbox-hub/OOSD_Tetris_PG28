@@ -27,7 +27,20 @@ public class MainMenuView extends AbstractScreen {
         playBtn.setOnAction(e -> { if (onPlay != null) onPlay.run(); });
         cfgBtn.setOnAction(e -> { if (onConfig != null) onConfig.run(); });
         scoreBtn.setOnAction(e -> { if (onHighScores != null) onHighScores.run(); });
-        exitBtn.setOnAction(e -> { if (onExit != null) onExit.run(); });
+        exitBtn.setOnAction(e -> {
+            var alert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.CONFIRMATION);
+            alert.setTitle("Exit");
+            alert.setHeaderText("Exit the game?");
+            alert.setContentText("Are you sure you want to quit?");
+            var yes = new javafx.scene.control.ButtonType("Yes", javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+            var no  = new javafx.scene.control.ButtonType("No",  javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
+            alert.getButtonTypes().setAll(yes, no);
+
+            var result = alert.showAndWait();
+            if (result.isPresent() && result.get() == yes) {
+                exitBtn.getScene().getWindow().hide();
+            }
+        });
 
         VBox root = new VBox(12, playBtn, cfgBtn, scoreBtn, exitBtn);
         root.setAlignment(Pos.CENTER);
@@ -38,9 +51,4 @@ public class MainMenuView extends AbstractScreen {
 
     @Override public void onShow() { /* no-op */ }
     @Override public void onHide() { /* no-op */ }
-
-    @Override
-    public void update(long nowNanos) {
-
-    }
 }
