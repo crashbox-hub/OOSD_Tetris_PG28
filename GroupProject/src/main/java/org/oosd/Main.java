@@ -5,16 +5,13 @@ import javafx.scene.Scene;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 import org.oosd.core.AbstractScreen;
-import org.oosd.ui.GameView;
-import org.oosd.ui.HighScoresView;
-import org.oosd.ui.MainMenuView;
-import org.oosd.ui.SplashScreenView;
+import org.oosd.ui.*;
 
 public class Main extends Application {
 
     private Stage stage;
-    private Scene scene;
-    private AbstractScreen current;
+    private Scene scene;            // the one shared scene whose root we swap
+    private AbstractScreen current; // the current AbstractScreen in 'scene'
 
     @Override
     public void start(Stage stage) {
@@ -43,13 +40,24 @@ public class Main extends Application {
         current.onShow();
     }
 
+    private void ensureSharedSceneOnStage() {
+        // If we previously replaced the Stage's Scene (e.g., ConfigurationView),
+        // switch back to the shared 'scene' before swapping roots.
+        if (stage.getScene() != scene) {
+            stage.setScene(scene);
+        }
+    }
+
     private void showSplash() {
+        ensureSharedSceneOnStage();
         SplashScreenView splash = new SplashScreenView(this::showMainMenu);
         setScreen(splash);
         stage.setTitle("Tetris — Splash");
     }
 
     private void showMainMenu() {
+        ensureSharedSceneOnStage();
+
         MainMenuView menu = new MainMenuView(
                 this::showGame,          // Play
                 this::showConfiguration, // Configuration
@@ -61,21 +69,24 @@ public class Main extends Application {
     }
 
     private void showGame() {
-        GameView game = new GameView();     // your existing gameplay screen (extends AbstractScreen)
+        ensureSharedSceneOnStage();
+        GameView game = new GameView();
         setScreen(game);
         stage.setTitle("Tetris — Game");
     }
 
     private void showHighScores() {
-        HighScoresView scores = new HighScoresView(this::showMainMenu); // assumes ctor takes Back callback
+        ensureSharedSceneOnStage();
+        HighScoresView scores = new HighScoresView(this::showMainMenu);
         setScreen(scores);
         stage.setTitle("Tetris — High Scores");
     }
 
     private void showConfiguration() {
-        // TODO: swap in your real ConfigurationView when ready
-        // For now, just return to the menu or use a placeholder screen.
-        showMainMenu();
+        ConfigurationView cfg = new ConfigurationView();
+        Scene cfgScene = cfg.createScene(stage, this::showMainMenu);
+        stage.setScene(cfgScene);
+        stage.setTitle("Tetris — Configuration");
     }
 
     public static void main(String[] args) {
