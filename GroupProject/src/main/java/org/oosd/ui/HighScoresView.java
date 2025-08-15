@@ -14,9 +14,9 @@ public class HighScoresView extends AbstractScreen {
         // Create a list showing dummy scores for now
         var list = new ListView<String>();
         list.getItems().addAll(
-                "1) AAA - 12000","2) BBB - 9500","3) CCC - 9000",
-                "4) DDD - 8500","5) EEE - 8000","6) FFF - 7500",
-                "7) GGG - 7000","8) HHH - 6500","9) III - 6000","10) JJJ - 5500"
+                "1) Tom - 12000","2) Sar - 9500","3) Alx - 9000",
+                "4) Dom - 8500","5) Eve - 8000","6) Cal - 7500",
+                "7) Grg - 7000","8) Hap - 6500","9) Ian - 6000","10) Jax - 5500"
         );
 
         // Back button to return to previous screen
