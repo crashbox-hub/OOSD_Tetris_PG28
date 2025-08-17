@@ -18,7 +18,6 @@ import org.oosd.core.AbstractScreen;
 import org.oosd.game.*;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
-import javafx.scene.control.Button;
 
 import java.util.Random;
 
@@ -75,7 +74,6 @@ public class GameView extends AbstractScreen {
     private final Label scoreLabel = new Label("SCORE 0");
     private final Label linesLabel = new Label("LINES 0");
     private final Label timeLabel  = new Label("TIME 00:00");
-    private final Button backToMenuButton = new Button("Back to Main Menu");
 
     /**
      * Main game loop — JavaFX calls handle(now) ~60fps.
@@ -149,12 +147,6 @@ public class GameView extends AbstractScreen {
         root.setStyle("-fx-background-color: linear-gradient(#0b1220, #0f1830);");
         getChildren().add(root);
 
-       /* ----- overlay back button ----- */
-        StackPane.setAlignment(backToMenuButton, Pos.BOTTOM_CENTER);
-        backToMenuButton.setPadding(new Insets(8, 16, 8, 16));
-        backToMenuButton.setOnAction(e -> { if (this.onExitToMenu != null) this.onExitToMenu.run(); });
-        backToMenuButton.setVisible(false);
-        getChildren().add(backToMenuButton);
 
         // Make this Pane focusable so it can receive key events
         setFocusTraversable(true);
@@ -283,7 +275,7 @@ public class GameView extends AbstractScreen {
             case RIGHT -> tryMove(0, +1, 0);                 // move right
             case UP    -> tryMove(0, 0, +1);                 // rotate clockwise
             case DOWN  -> { if (!tryMove(1, 0, 0)) lockPiece(); } // soft drop
-            case P     -> { paused = !paused; backToMenuButton.setVisible(paused); } // toggle pause + button               // toggle pause overlay
+            case P     -> paused = !paused;                  // toggle pause overlay
             case ESCAPE -> { if (paused && onExitToMenu != null) onExitToMenu.run();}// exit to menu when paused
             case R -> { if (paused) restartGame(); }// restart game
             default -> {}
@@ -480,6 +472,5 @@ public class GameView extends AbstractScreen {
         drawNextPreview();
         draw();
         requestFocus(); // ensure we still receive key events
-        backToMenuButton.setVisible(false);
     }
 }
