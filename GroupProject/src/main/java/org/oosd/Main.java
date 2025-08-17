@@ -5,10 +5,7 @@ import javafx.scene.Scene;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 import org.oosd.core.AbstractScreen;
-import org.oosd.ui.GameView;
-import org.oosd.ui.HighScoresView;
-import org.oosd.ui.MainMenuView;
-import org.oosd.ui.SplashScreenView;
+import org.oosd.ui.*;
 
 public class Main extends Application {
 
@@ -73,10 +70,11 @@ public class Main extends Application {
     }
 
     private void showConfiguration() {
-        // TODO: swap in your real ConfigurationView when ready
-        // For now, just return to the menu or use a placeholder screen.
-        showMainMenu();
+        ConfigurationView cfg = new ConfigurationView(this::showMainMenu);
+        setScreen(cfg);
+        stage.setTitle("Tetris — Configuration");
     }
+
 
     public static void main(String[] args) {
         launch(args);
