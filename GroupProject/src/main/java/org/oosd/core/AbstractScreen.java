@@ -9,7 +9,7 @@ import javafx.scene.layout.Pane;
  *
  * We also implement Updatable so each screen can respond to the game loop.
  */
-public abstract class AbstractScreen extends Pane implements Updatable {
+public abstract class AbstractScreen extends Pane {
 
     /**
      * Called when this screen becomes visible.

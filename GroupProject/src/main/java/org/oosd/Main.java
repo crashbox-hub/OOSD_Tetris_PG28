@@ -5,10 +5,7 @@ import javafx.scene.Scene;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 import org.oosd.core.AbstractScreen;
-import org.oosd.ui.GameView;
-import org.oosd.ui.HighScoresView;
-import org.oosd.ui.MainMenuView;
-import org.oosd.ui.SplashScreenView;
+import org.oosd.ui.*;
 
 public class Main extends Application {
 
@@ -21,9 +18,9 @@ public class Main extends Application {
         this.stage = stage;
 
         // One Scene; swap its root with different AbstractScreen instances
-        this.scene = new Scene(new StackPane(), 640, 480);
+        this.scene = new Scene(new StackPane(), 820, 680);
         stage.setScene(scene);
-        stage.setResizable(false);
+        stage.setResizable(true);
         stage.setTitle("Tetris - PG28");
         stage.show();
 
@@ -61,7 +58,7 @@ public class Main extends Application {
     }
 
     private void showGame() {
-        GameView game = new GameView();     // your existing gameplay screen (extends AbstractScreen)
+        GameView game = new GameView(this::showMainMenu); // pass callback
         setScreen(game);
         stage.setTitle("Tetris — Game");
     }
@@ -73,10 +70,11 @@ public class Main extends Application {
     }
 
     private void showConfiguration() {
-        // TODO: swap in your real ConfigurationView when ready
-        // For now, just return to the menu or use a placeholder screen.
-        showMainMenu();
+        ConfigurationView cfg = new ConfigurationView(this::showMainMenu);
+        setScreen(cfg);
+        stage.setTitle("Tetris — Configuration");
     }
+
 
     public static void main(String[] args) {
         launch(args);

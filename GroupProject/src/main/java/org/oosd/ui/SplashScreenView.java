@@ -122,9 +122,4 @@ public class SplashScreenView extends AbstractScreen {
     public void onHide() {
         // nothing to stop for now
     }
-
-    @Override
-    public void update(long nowNanos) {
-
-    }
 }
