@@ -147,7 +147,6 @@ public class GameView extends AbstractScreen {
         root.setStyle("-fx-background-color: linear-gradient(#0b1220, #0f1830);");
         getChildren().add(root);
 
-
         // Make this Pane focusable so it can receive key events
         setFocusTraversable(true);
         setOnKeyPressed(this::onKey);
