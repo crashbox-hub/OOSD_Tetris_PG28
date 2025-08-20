@@ -23,6 +23,7 @@ public class MainMenuView extends AbstractScreen {
 
         StackPane root = new StackPane();
 
+        // Background styling
         root.setPrefSize(510, 640);
         root.setPadding(new Insets(24));
         root.setBackground(new Background(new BackgroundFill(
@@ -30,6 +31,7 @@ public class MainMenuView extends AbstractScreen {
                 CornerRadii.EMPTY, Insets.EMPTY
         )));
 
+        // Main panel
         VBox panel = new VBox(10);
         panel.setAlignment(Pos.CENTER);
         panel.setPadding(new Insets(20));
@@ -44,20 +46,24 @@ public class MainMenuView extends AbstractScreen {
         )));
         panel.setEffect(new DropShadow(20, Color.color(0,0,0,0.45)));
 
+        // Title label
         Label title = new Label("TETRIS");
         title.setTextFill(Color.WHITE);
         title.setFont(Font.font(null, FontWeight.EXTRA_BOLD, 56));
         title.setEffect(new DropShadow(24, Color.color(0,0,0,0.6)));
 
+        // Menu buttons
         Button startButton = primaryButton("Start Game");
         Button configButton = secondaryButton("Configuration");
         Button highScoresButton = secondaryButton("High Scores");
         Button exitButton = ghostButton("Exit");
 
+        // Button actions
         startButton.setOnAction(e -> { if (onPlay != null) onPlay.run(); });
         configButton.setOnAction(e -> { if (onConfig != null) onConfig.run(); });
         highScoresButton.setOnAction(e -> { if (onHighScores != null) onHighScores.run(); });
         exitButton.setOnAction(e -> {
+            // Exit popup
             var alert = new Alert(Alert.AlertType.CONFIRMATION);
             alert.setTitle("Exit");
             alert.setHeaderText("Exit the game?");
@@ -69,6 +75,7 @@ public class MainMenuView extends AbstractScreen {
             if (result.isPresent() && result.get() == yes && onExit != null) onExit.run();
         });
 
+        // Button layou
         VBox buttons = new VBox(12, startButton, configButton, highScoresButton, exitButton);
         buttons.setAlignment(Pos.CENTER);
 
@@ -76,6 +83,7 @@ public class MainMenuView extends AbstractScreen {
         root.getChildren().add(panel);
         getChildren().add(root);
 
+        // Keyboard shortcuts for menu
         setOnKeyPressed(e -> {
             switch (e.getCode()) {
                 case ENTER, SPACE -> startButton.fire();
@@ -89,6 +97,8 @@ public class MainMenuView extends AbstractScreen {
     }
     @Override public void onShow() { requestFocus(); }
     @Override public void onHide() { }
+
+    // Button styles
 
     private Button primaryButton(String text) {
         Button b = baseButton(text);
@@ -143,6 +153,7 @@ public class MainMenuView extends AbstractScreen {
         return b;
     }
 
+    // Base button styling
     private Button baseButton(String text) {
         Button b = new Button(text);
         b.setMinWidth(260);
@@ -153,6 +164,7 @@ public class MainMenuView extends AbstractScreen {
         return b;
     }
 
+    // Hover and press effects for buttons
     private void addHoverPressEffects(Button b, String hoverPaint, String pressPaint) {
         Background normal = b.getBackground();
         Background hover = new Background(new BackgroundFill(
