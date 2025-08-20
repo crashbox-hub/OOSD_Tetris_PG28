@@ -22,6 +22,8 @@ public class MainMenuView extends AbstractScreen {
                         Runnable onExit) {
 
         StackPane root = new StackPane();
+
+        root.setPrefSize(510, 640);
         root.setPadding(new Insets(24));
         root.setBackground(new Background(new BackgroundFill(
                 javafx.scene.paint.Paint.valueOf("linear-gradient(#0b1220, #0f1830)"),
