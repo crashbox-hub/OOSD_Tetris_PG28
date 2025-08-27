@@ -1,0 +1,150 @@
+/* =========================================================
+   Base
+   ========================================================= */
+.root {
+    -fx-font-family: "Segoe UI", "Arial", sans-serif;
+    -fx-font-size: 14px;
+}
+
+/* App background wrapper */
+.app-bg {
+    -fx-background-color: linear-gradient(#0b1220, #0f1830);
+    -fx-padding: 24;
+}
+
+/* Card / Panel shared across screens */
+.panel {
+    -fx-background-color: linear-gradient(#072032, #0d2b45);
+    -fx-background-radius: 12;
+    -fx-border-color: #2fd0ff;
+    -fx-border-width: 3;
+    -fx-border-radius: 12;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.45), 20, 0, 0, 0);
+}
+
+/* Titles */
+.title {
+    -fx-text-fill: white;
+    -fx-font-weight: 800;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 24, 0, 0, 0);
+}
+.title-xxl { -fx-font-size: 56px; }
+.title-xl  { -fx-font-size: 36px; }
+.subtitle  { -fx-font-size: 14px; }
+.footer    { -fx-text-fill: rgba(255,255,255,0.75); }
+
+/* Layout helpers */
+.center-bar {  /* e.g. Back area centered */
+    -fx-alignment: center;
+    -fx-padding: 12 0 0 0;
+}
+.footer-bar {  /* right-aligned footer area */
+    -fx-alignment: center-right;
+    -fx-padding: 0 10 8 0;
+}
+
+/* =========================================================
+   Buttons (shared)
+   ========================================================= */
+.btn {
+    -fx-padding: 12 20;
+    -fx-font-size: 16px;
+    -fx-min-width: 260;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+}
+
+/* Focus glow */
+.btn:focused {
+    -fx-effect: dropshadow(gaussian, rgba(255,255,255,0.25), 18, 0, 0, 0);
+}
+
+/* Primary button (Start Game) */
+.btn-primary {
+    -fx-background-color: linear-gradient(#5ce1e6, #26c2d4);
+    -fx-text-fill: #0b0f12;
+}
+.btn-primary:hover {
+    -fx-background-color: linear-gradient(#6cf0ef, #30d0df);
+}
+.btn-primary:pressed {
+    -fx-background-color: linear-gradient(#42cdd1, #1bb6c9);
+}
+
+/* Secondary buttons (Configuration / High Scores) */
+.btn-secondary {
+    -fx-background-color: rgba(255,255,255,0.10);
+    -fx-text-fill: white;
+    -fx-border-color: transparent;
+}
+.btn-secondary:hover  { -fx-background-color: rgba(255,255,255,0.16); }
+.btn-secondary:pressed{ -fx-background-color: rgba(255,255,255,0.22); }
+
+/* Ghost button (Exit / Back) */
+.btn-ghost {
+    -fx-background-color: transparent;
+    -fx-text-fill: rgba(255,255,255,0.85);
+    -fx-border-color: rgba(255,255,255,0.25);
+    -fx-border-width: 1.5;
+}
+.btn-ghost:hover {
+    -fx-border-color: rgba(255,255,255,0.45);
+    -fx-text-fill: white;
+}
+
+/* =========================================================
+   ConfigurationView extras
+   ========================================================= */
+.label-dim    { -fx-text-fill: rgba(255,255,255,0.9); }
+.value-label  { -fx-text-fill: #2fd0ff; -fx-font-weight: bold; }
+
+.config-grid { /* hook if needed */ }
+
+.config-slider {
+    -fx-control-inner-background: rgba(255,255,255,0.08);
+    -fx-base: #26c2d4;
+    -fx-focus-color: #2fd0ff;
+    -fx-faint-focus-color: rgba(47,208,255,0.25);
+}
+.config-slider .axis .tick-label {
+    -fx-text-fill: white;
+}
+
+.config-checkbox {
+    -fx-focus-color: #2fd0ff;
+    -fx-faint-focus-color: rgba(47,208,255,0.25);
+}
+.state-on  { -fx-text-fill: #2fd0ff; -fx-font-weight: bold; }
+.state-off { -fx-text-fill: rgba(255,255,255,0.75); -fx-font-weight: bold; }
+
+/* =========================================================
+   HighScoresView extras
+   ========================================================= */
+.scores-list {
+    -fx-background-color: rgba(255,255,255,0.06);
+    -fx-background-insets: 0;
+    -fx-background-radius: 10;
+    -fx-border-color: rgba(255,255,255,0.18);
+    -fx-border-radius: 10;
+    -fx-border-width: 1.5;
+    -fx-text-fill: white;
+}
+
+/* Zebra rows & mono font */
+.list-cell.zebra-even {
+    -fx-background-color: rgba(255,255,255,0.04);
+    -fx-text-fill: white;
+    -fx-font-family: "Consolas", "Courier New", monospace;
+    -fx-font-size: 16px;
+}
+.list-cell.zebra-odd {
+    -fx-background-color: rgba(255,255,255,0.02);
+    -fx-text-fill: white;
+    -fx-font-family: "Consolas", "Courier New", monospace;
+    -fx-font-size: 16px;
+}
+
+/* Medal colors */
+.list-cell.score-gold   { -fx-text-fill: #FFD54F; }
+.list-cell.score-silver { -fx-text-fill: #CFD8DC; }
+.list-cell.score-bronze { -fx-text-fill: #FFAB91; }

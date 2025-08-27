@@ -7,11 +7,9 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
-import javafx.scene.effect.DropShadow;
-import javafx.scene.layout.*;
-import javafx.scene.paint.Color;
-import javafx.scene.text.Font;
-import javafx.scene.text.FontWeight;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import org.oosd.core.AbstractScreen;
 
 public class MainMenuView extends AbstractScreen {
@@ -21,36 +19,30 @@ public class MainMenuView extends AbstractScreen {
                         Runnable onHighScores,
                         Runnable onExit) {
 
-        StackPane root = new StackPane();
-        root.setPadding(new Insets(24));
-        root.setBackground(new Background(new BackgroundFill(
-                javafx.scene.paint.Paint.valueOf("linear-gradient(#0b1220, #0f1830)"),
-                CornerRadii.EMPTY, Insets.EMPTY
-        )));
+        // Background container
+        StackPane bg = new StackPane();
+        bg.getStyleClass().add("app-bg");      // gradient + padding (styles.css)
 
+        // Panel / card
         VBox panel = new VBox(10);
+        panel.getStyleClass().add("panel");    // card gradient + border + shadow
         panel.setAlignment(Pos.CENTER);
         panel.setPadding(new Insets(20));
-        panel.setBackground(new Background(new BackgroundFill(
-                javafx.scene.paint.Paint.valueOf("linear-gradient(#072032, #0d2b45)"),
-                new CornerRadii(12), Insets.EMPTY
-        )));
-        panel.setBorder(new Border(new BorderStroke(
-                Color.web("#2fd0ff"),
-                BorderStrokeStyle.SOLID, new CornerRadii(12),
-                new BorderWidths(3)
-        )));
-        panel.setEffect(new DropShadow(20, Color.color(0,0,0,0.45)));
 
+        // Title
         Label title = new Label("TETRIS");
-        title.setTextFill(Color.WHITE);
-        title.setFont(Font.font(null, FontWeight.EXTRA_BOLD, 56));
-        title.setEffect(new DropShadow(24, Color.color(0,0,0,0.6)));
+        title.getStyleClass().addAll("title", "title-xxl");
 
-        Button startButton = primaryButton("Start Game");
-        Button configButton = secondaryButton("Configuration");
-        Button highScoresButton = secondaryButton("High Scores");
-        Button exitButton = ghostButton("Exit");
+        // Buttons
+        Button startButton     = new Button("Start Game");
+        Button configButton    = new Button("Configuration");
+        Button highScoresButton= new Button("High Scores");
+        Button exitButton      = new Button("Exit");
+
+        startButton.getStyleClass().addAll("btn", "btn-primary");
+        configButton.getStyleClass().addAll("btn", "btn-secondary");
+        highScoresButton.getStyleClass().addAll("btn", "btn-secondary");
+        exitButton.getStyleClass().addAll("btn", "btn-ghost");
 
         startButton.setOnAction(e -> { if (onPlay != null) onPlay.run(); });
         configButton.setOnAction(e -> { if (onConfig != null) onConfig.run(); });
@@ -71,9 +63,10 @@ public class MainMenuView extends AbstractScreen {
         buttons.setAlignment(Pos.CENTER);
 
         panel.getChildren().addAll(title, buttons);
-        root.getChildren().add(panel);
-        getChildren().add(root);
+        bg.getChildren().add(panel);
+        getChildren().add(bg);
 
+        // Keyboard shortcuts
         setOnKeyPressed(e -> {
             switch (e.getCode()) {
                 case ENTER, SPACE -> startButton.fire();
@@ -85,85 +78,7 @@ public class MainMenuView extends AbstractScreen {
         });
         setFocusTraversable(true);
     }
+
     @Override public void onShow() { requestFocus(); }
     @Override public void onHide() { }
-
-    private Button primaryButton(String text) {
-        Button b = baseButton(text);
-        b.setBackground(new Background(new BackgroundFill(
-                javafx.scene.paint.Paint.valueOf("linear-gradient(#5ce1e6, #26c2d4)"),
-                new CornerRadii(12), Insets.EMPTY
-        )));
-        b.setTextFill(Color.web("#0b0f12"));
-        addHoverPressEffects(b,
-                "linear-gradient(#6cf0ef, #30d0df)",
-                "linear-gradient(#42cdd1, #1bb6c9)");
-        return b;
-    }
-
-    private Button secondaryButton(String text) {
-        Button b = baseButton(text);
-        b.setBackground(new Background(new BackgroundFill(
-                Color.color(1,1,1,0.10),
-                new CornerRadii(12), Insets.EMPTY
-        )));
-        b.setTextFill(Color.WHITE);
-        addHoverPressEffects(b,
-                "rgba(255,255,255,0.16)",
-                "rgba(255,255,255,0.22)");
-        return b;
-    }
-
-    private Button ghostButton(String text) {
-        Button b = baseButton(text);
-        b.setBackground(new Background(new BackgroundFill(
-                Color.TRANSPARENT, new CornerRadii(12), Insets.EMPTY
-        )));
-        b.setBorder(new Border(new BorderStroke(
-                Color.color(1,1,1,0.25),
-                BorderStrokeStyle.SOLID, new CornerRadii(12), new BorderWidths(1.5)
-        )));
-        b.setTextFill(Color.color(1,1,1,0.85));
-        b.setOnMouseEntered(e -> {
-            b.setBorder(new Border(new BorderStroke(
-                    Color.color(1,1,1,0.45),
-                    BorderStrokeStyle.SOLID, new CornerRadii(12), new BorderWidths(1.5)
-            )));
-            b.setTextFill(Color.WHITE);
-        });
-        b.setOnMouseExited(e -> {
-            b.setBorder(new Border(new BorderStroke(
-                    Color.color(1,1,1,0.25),
-                    BorderStrokeStyle.SOLID, new CornerRadii(12), new BorderWidths(1.5)
-            )));
-            b.setTextFill(Color.color(1,1,1,0.85));
-        });
-        return b;
-    }
-
-    private Button baseButton(String text) {
-        Button b = new Button(text);
-        b.setMinWidth(260);
-        b.setPadding(new Insets(12, 20, 12, 20));
-        b.setFont(Font.font(16));
-        DropShadow focusGlow = new DropShadow(18, Color.color(1,1,1,0.25));
-        b.focusedProperty().addListener((obs, was, is) -> b.setEffect(is ? focusGlow : null));
-        return b;
-    }
-
-    private void addHoverPressEffects(Button b, String hoverPaint, String pressPaint) {
-        Background normal = b.getBackground();
-        Background hover = new Background(new BackgroundFill(
-                javafx.scene.paint.Paint.valueOf(hoverPaint),
-                new CornerRadii(12), Insets.EMPTY
-        ));
-        Background pressed = new Background(new BackgroundFill(
-                javafx.scene.paint.Paint.valueOf(pressPaint),
-                new CornerRadii(12), Insets.EMPTY
-        ));
-        b.setOnMouseEntered(e -> b.setBackground(hover));
-        b.setOnMouseExited(e -> b.setBackground(normal));
-        b.setOnMousePressed(e -> b.setBackground(pressed));
-        b.setOnMouseReleased(e -> b.setBackground(hover));
-    }
 }
