@@ -148,3 +148,32 @@
 .list-cell.score-gold   { -fx-text-fill: #FFD54F; }
 .list-cell.score-silver { -fx-text-fill: #CFD8DC; }
 .list-cell.score-bronze { -fx-text-fill: #FFAB91; }
+
+/* ===== GameView specific ===== */
+
+/* Row that holds the framed board and the HUD */
+.game-row {
+    -fx-alignment: top-center;
+}
+
+/* Framed board rectangle (matches app style) */
+.board-frame {
+    -fx-padding: 8;
+    -fx-background-color: linear-gradient(#072032, #0d2b45);
+    -fx-background-radius: 8;
+    -fx-border-color: #2fd0ff;
+    -fx-border-width: 3;
+    -fx-border-radius: 8;
+}
+
+/* HUD styling */
+.hud { -fx-padding: 12; }
+.hud-title {
+    -fx-text-fill: white;
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+}
+.hud-label {
+    -fx-text-fill: white;
+    -fx-font-size: 14px;
+}
