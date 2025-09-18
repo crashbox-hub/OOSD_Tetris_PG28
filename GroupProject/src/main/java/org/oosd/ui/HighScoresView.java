@@ -78,7 +78,7 @@ public class HighScoresView extends AbstractScreen {
                 setTextFill(Color.WHITE);
                 setFont(Font.font("Consolas", 16));
 
-                // zebra rows (very subtle)
+                // zebra rows
                 int idx = getIndex();
                 setBackground(new Background(new BackgroundFill(
                         idx % 2 == 0 ? Color.rgb(255,255,255,0.04)

@@ -5,7 +5,10 @@ import javafx.scene.Scene;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 import org.oosd.core.AbstractScreen;
-import org.oosd.ui.*;
+import org.oosd.ui.GameView;
+import org.oosd.ui.HighScoresView;
+import org.oosd.ui.MainMenuView;
+import org.oosd.ui.SplashScreenView;
 
 public class Main extends Application {
 
@@ -17,8 +20,13 @@ public class Main extends Application {
     public void start(Stage stage) {
         this.stage = stage;
 
-        // One Scene; swap its root with different AbstractScreen instances
+
         this.scene = new Scene(new StackPane(), 820, 680);
+
+        // 🔗 Attach app-wide stylesheet
+        String css = getClass().getResource("/styles.css").toExternalForm();
+        this.scene.getStylesheets().add(css);
+
         stage.setScene(scene);
         stage.setResizable(true);
         stage.setTitle("Tetris - PG28");
@@ -58,23 +66,22 @@ public class Main extends Application {
     }
 
     private void showGame() {
-        GameView game = new GameView(this::showMainMenu); // pass callback
+        GameView game = new GameView(this::showMainMenu); // if your ctor uses a Back callback
         setScreen(game);
         stage.setTitle("Tetris — Game");
     }
 
     private void showHighScores() {
-        HighScoresView scores = new HighScoresView(this::showMainMenu); // assumes ctor takes Back callback
+        HighScoresView scores = new HighScoresView(this::showMainMenu);
         setScreen(scores);
         stage.setTitle("Tetris — High Scores");
     }
 
     private void showConfiguration() {
-        ConfigurationView cfg = new ConfigurationView(this::showMainMenu);
-        setScreen(cfg);
-        stage.setTitle("Tetris — Configuration");
+        // TODO: swap in your real ConfigurationView when ready
+        // For now, just return to the menu or use a placeholder screen.
+        showMainMenu();
     }
-
 
     public static void main(String[] args) {
         launch(args);
