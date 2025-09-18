@@ -177,3 +177,30 @@
     -fx-text-fill: white;
     -fx-font-size: 14px;
 }
+
+/* Row that holds the framed board and the HUD */
+.game-row {
+    -fx-alignment: top-left;
+    -fx-spacing: 16;
+}
+
+/* Cyan framed rectangle around the whole game area */
+.board-frame {
+    -fx-background-color: linear-gradient(#072032, #0d2b45);
+    -fx-background-radius: 12;
+    -fx-border-color: #2fd0ff;
+    -fx-border-width: 3;
+    -fx-border-radius: 12;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.45), 20, 0, 0, 0);
+}
+
+/* Surface behind the board cells */
+.board-surface {
+    -fx-background-color: rgba(255,255,255,0.03);
+    -fx-background-radius: 8;
+}
+
+/* HUD */
+.hud       { -fx-padding: 12; }
+.hud-title { -fx-text-fill: white; -fx-font-size: 16px; -fx-font-weight: 700; }
+.hud-label { -fx-text-fill: white; -fx-font-size: 14px; }
