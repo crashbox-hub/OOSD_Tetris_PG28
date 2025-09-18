@@ -19,13 +19,9 @@ public class MainMenuView extends AbstractScreen {
                         Runnable onHighScores,
                         Runnable onExit) {
 
-        // Background container
-        StackPane bg = new StackPane();
-        bg.getStyleClass().add("app-bg");      // gradient + padding (styles.css)
-
-        // Panel / card
+        /* ===== Panel (card) ===== */
         VBox panel = new VBox(10);
-        panel.getStyleClass().add("panel");    // card gradient + border + shadow
+        panel.getStyleClass().add("panel");    // gradient + border + shadow (styles.css)
         panel.setAlignment(Pos.CENTER);
         panel.setPadding(new Insets(20));
 
@@ -34,10 +30,10 @@ public class MainMenuView extends AbstractScreen {
         title.getStyleClass().addAll("title", "title-xxl");
 
         // Buttons
-        Button startButton     = new Button("Start Game");
-        Button configButton    = new Button("Configuration");
-        Button highScoresButton= new Button("High Scores");
-        Button exitButton      = new Button("Exit");
+        Button startButton      = new Button("Start Game");
+        Button configButton     = new Button("Configuration");
+        Button highScoresButton = new Button("High Scores");
+        Button exitButton       = new Button("Exit");
 
         startButton.getStyleClass().addAll("btn", "btn-primary");
         configButton.getStyleClass().addAll("btn", "btn-secondary");
@@ -63,16 +59,28 @@ public class MainMenuView extends AbstractScreen {
         buttons.setAlignment(Pos.CENTER);
 
         panel.getChildren().addAll(title, buttons);
-        bg.getChildren().add(panel);
-        getChildren().add(bg);
 
-        // Keyboard shortcuts
+        /* ===== Centering root =====
+           This StackPane fills the whole AbstractScreen and centers the panel. */
+        StackPane root = new StackPane(panel);
+        root.getStyleClass().add("app-bg"); // same gradient background as other screens
+        root.setPadding(new Insets(24));
+        root.setAlignment(Pos.CENTER);
+
+        // Make the StackPane match the screen size
+        root.setMinSize(0, 0);
+        root.prefWidthProperty().bind(widthProperty());
+        root.prefHeightProperty().bind(heightProperty());
+
+        getChildren().add(root);
+
+        /* ===== Keyboard shortcuts ===== */
         setOnKeyPressed(e -> {
             switch (e.getCode()) {
                 case ENTER, SPACE -> startButton.fire();
-                case C -> configButton.fire();
-                case H -> highScoresButton.fire();
-                case ESCAPE, Q -> exitButton.fire();
+                case C            -> configButton.fire();
+                case H            -> highScoresButton.fire();
+                case ESCAPE, Q    -> exitButton.fire();
                 default -> {}
             }
         });

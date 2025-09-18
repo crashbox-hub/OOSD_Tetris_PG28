@@ -1,34 +1,32 @@
 package org.oosd.ui.sprites;
 
-import java.util.concurrent.ThreadLocalRandom;
-
+import javafx.scene.paint.Color;
+import org.oosd.core.GameConfig;
+import org.oosd.game.*;
 
 public final class SpriteFactory {
-    private static final SpriteFactory INSTANCE = new SpriteFactory();
     private SpriteFactory() {}
-    public static SpriteFactory getInstance() { return INSTANCE; }
 
-    public Sprite createSprite() {
-        // For now: always STAR at random location (caller may reposition)
-        return createSprite(SpriteType.STAR);
+    /** Create a sprite for a given entity. Safe to call from the game thread. */
+    public static synchronized Sprite create(GameEntity e) {
+        int tile = GameConfig.get().tileSize();
+
+        return switch (e.entityType()) {
+            case ACTIVE_PIECE -> new PieceSprite((ActivePieceEntity) e);
+            case BLOCK -> {
+                BlockEntity b = (BlockEntity)e;
+                BlockSprite s = new BlockSprite(e, tile, colorFor(b.colorId()));
+                s.setXY(b.x()*tile, b.y()*tile);
+                yield s;
+            }
+        };
     }
 
-    public Sprite createSprite(SpriteType type) {
-        switch (type) {
-            case STAR -> { return new StarSprite(); }
-            default -> throw new IllegalArgumentException("Unsupported type: " + type);
-        }
-    }
-
-    public Sprite createSprite(SpriteType type, double x, double y) {
-        Sprite s = createSprite(type);
-        s.setXY(x, y);
-        return s;
-    }
-
-    public Sprite createRandomIn(SpriteType type, double width, double height) {
-        double x = ThreadLocalRandom.current().nextDouble(12, Math.max(12, width - 12));
-        double y = ThreadLocalRandom.current().nextDouble(12, Math.max(12, height - 12));
-        return createSprite(type, x, y);
+    private static Color colorFor(int id) {
+        return switch (id) {
+            case 1 -> Color.CYAN; case 2 -> Color.YELLOW; case 3 -> Color.PURPLE;
+            case 4 -> Color.LIMEGREEN; case 5 -> Color.RED; case 6 -> Color.BLUE;
+            case 7 -> Color.ORANGE; default -> Color.GRAY;
+        };
     }
 }

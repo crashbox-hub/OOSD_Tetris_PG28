@@ -6,7 +6,6 @@ import javafx.geometry.Pos;
 import javafx.scene.Group;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
@@ -14,93 +13,128 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+
 import org.oosd.core.AbstractScreen;
-import org.oosd.game.Board;
-import org.oosd.game.PieceState;
-import org.oosd.game.Tetromino;
-import org.oosd.ui.sprites.BlockSprite;
+import org.oosd.core.GameConfig;
+import org.oosd.game.*;
+
+import org.oosd.ui.sprites.PieceSprite;
 import org.oosd.ui.sprites.Sprite;
+import org.oosd.ui.sprites.SpriteFactory;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 
+/**
+ * GameView (entity/sprite version).
+ * - Uses GameConfig for sizing & timing.
+ * - Active piece is a GameEntity updated with frame-rate independent logic.
+ * - Sprites mirror entities; SpriteFactory builds the visuals.
+ * - Board + HUD are enclosed in a framed rectangle; Back button is separate.
+ */
 public class GameView extends AbstractScreen {
 
-    /* ============ sizes ============ */
-    private static final int TILE = 30;
-    private static final int BOARD_W = Board.COLS * TILE;   // 300
-    private static final int BOARD_H = Board.ROWS * TILE;   // 600
+    /* =========================
+       Config-derived sizing
+       ========================= */
+    private final int TILE = GameConfig.get().tileSize();
+    private final int BOARD_W = Board.COLS * TILE;
+    private final int BOARD_H = Board.ROWS * TILE;
 
-    /* ============ game state ============ */
+    /* =========================
+       Core model
+       ========================= */
     private final Board board = new Board();
-    private final Random rng = new Random();
-    private PieceState active = null;
-    private Tetromino nextPiece = null;
-    private boolean paused = false;
-    private long lastDrop = 0;
-    private long dropIntervalNanos = 500_000_000L;
-    private long runStartNanos;
-    private int score = 0;
-    private int lines = 0;
-
     private final Runnable onExitToMenu;
 
-    /* ============ view ============ */
-    // layer that contains the grid and all block sprites
-    private final Group gridLayer = new Group();
-    private final Group boardLayer = new Group(); // holds gridLayer + blocks
+    // World lists
+    private final List<GameEntity> entities = new ArrayList<>();
+    private final List<Sprite> sprites = new ArrayList<>();
 
-    private final Label pauseOverlay = new Label();
+    // UI layers
+    private final Group boardLayer = new Group(); // holds grid + placed + sprites
+    private final Group gridLayer  = new Group(); // static faint grid
+
+    // HUD
     private final Label scoreLabel = new Label("SCORE 0");
     private final Label linesLabel = new Label("LINES 0");
     private final Label timeLabel  = new Label("TIME 00:00");
+    private final Label pauseOverlay = new Label();
 
-    private final List<Sprite> tempSprites = new ArrayList<>();
+    private boolean paused = false;
+    private boolean gameOver = false;
+    private int score = 0;
+    private int lines = 0;
+    private long runStartNanos = 0L;
 
+    /* =========================
+       Main loop (FPS independent)
+       ========================= */
     private final AnimationTimer loop = new AnimationTimer() {
         @Override public void handle(long now) {
             if (!paused) {
-                if (active == null) spawn();
-                if (now - lastDrop >= dropIntervalNanos) {
-                    if (!tryMove(1, 0, 0)) lockPiece();
-                    lastDrop = now;
+                // 1) advance all entities with delta time
+                for (GameEntity e : entities) e.tick(now);
+
+                // 2) collect/remove dead and react (e.g., respawn on lock)
+                removeDeadAndRespawn();
+
+                // 3) sync piece sprite to entity (board cells come from board)
+                for (Sprite s : sprites) {
+                    if (s instanceof PieceSprite ps) ps.syncToEntity();
+                }
+
+                // 4) scoring – clear rows that were filled by a lock
+                int cleared = board.clearFullRows();
+                if (cleared > 0) {
+                    lines += cleared;
+                    switch (cleared) {
+                        case 1 -> score += 100;
+                        case 2 -> score += 300;
+                        case 3 -> score += 500;
+                        case 4 -> score += 800;
+                        default -> score += cleared * 100;
+                    }
                 }
             }
-            drawSprites();
+
+            // 5) redraw placed cells (board grid) and overlay the piece sprite (already in layer)
+            drawPlacedBlocks();
+
+            // 6) HUD
             updateHud(now);
         }
     };
 
+    /* =========================
+       ctor / layout
+       ========================= */
     public GameView(Runnable onExitToMenu) {
         this.onExitToMenu = onExitToMenu;
 
-        /* ---------- HUD (right) ---------- */
+        // ----- HUD (right column) -----
         var hud = new VBox(16);
         hud.setAlignment(Pos.TOP_LEFT);
         hud.getStyleClass().add("hud");
 
-        Label nextTitle = new Label("NEXT (M1: placeholder)");
+        Label nextTitle = new Label("NEXT");
         nextTitle.getStyleClass().add("hud-title");
 
         for (Label lbl : new Label[]{scoreLabel, linesLabel, timeLabel}) {
             lbl.getStyleClass().add("hud-label");
         }
-
         hud.getChildren().addAll(nextTitle, new Label(""), scoreLabel, linesLabel, timeLabel);
 
-        /* ---------- Grid + board layer ---------- */
+        // ----- Board surface + grid -----
         buildGrid(gridLayer);
-        boardLayer.getChildren().add(gridLayer); // grid first; blocks drawn over it
+        boardLayer.getChildren().add(gridLayer);
 
-        // surface that holds boardLayer (fixed size)
         StackPane boardSurface = new StackPane(boardLayer);
         boardSurface.getStyleClass().add("board-surface");
         boardSurface.setMinSize(BOARD_W, BOARD_H);
         boardSurface.setPrefSize(BOARD_W, BOARD_H);
         boardSurface.setMaxSize(BOARD_W, BOARD_H);
 
-        // centered pause overlay on top of board
+        // Pause / Game Over overlay (centered)
         pauseOverlay.setText("Game Paused (P)\nESC to Main Menu\nR to Restart Game");
         pauseOverlay.setTextFill(Color.WHITE);
         pauseOverlay.setFont(Font.font("Arial", FontWeight.BOLD, 20));
@@ -108,16 +142,15 @@ public class GameView extends AbstractScreen {
         boardSurface.getChildren().add(pauseOverlay);
         StackPane.setAlignment(pauseOverlay, Pos.CENTER);
 
-        /* ---------- Framed game rectangle (board + HUD) ---------- */
+        // ----- Framed game rectangle (board + HUD) -----
         HBox gameRow = new HBox(16, boardSurface, hud);
         gameRow.getStyleClass().add("game-row");
 
-        // frame around the whole game area
         StackPane gameFrame = new StackPane(gameRow);
-        gameFrame.getStyleClass().add("board-frame"); // cyan border + shadow via CSS
+        gameFrame.getStyleClass().add("board-frame");
         gameFrame.setPadding(new Insets(8));
 
-        /* ---------- Back button (bottom, separate) ---------- */
+        // ----- Back button (separate, bottom) -----
         Button back = new Button("Back");
         back.getStyleClass().addAll("btn", "btn-ghost");
         back.setOnAction(e -> { if (onExitToMenu != null) onExitToMenu.run(); });
@@ -125,129 +158,166 @@ public class GameView extends AbstractScreen {
         HBox backBar = new HBox(back);
         backBar.getStyleClass().add("center-bar");
 
-        /* ---------- Root ---------- */
+        // ----- Root -----
         VBox root = new VBox(12, gameFrame, backBar);
         root.getStyleClass().add("app-bg");
         root.setFillWidth(false);
         getChildren().add(root);
 
-        // input
+        // Input focus + keys
         setFocusTraversable(true);
         setOnKeyPressed(this::onKey);
+
+        // Start with one active piece
+        spawnActivePiece();
     }
 
-    /* ============ lifecycle ============ */
+    /* =========================
+       Lifecycle
+       ========================= */
     @Override public void onShow() {
         requestFocus();
-        lastDrop = 0;
         runStartNanos = System.nanoTime();
         loop.start();
     }
     @Override public void onHide() { loop.stop(); }
 
-    /* ============ gameplay ============ */
-    private void spawn() {
-        if (nextPiece == null) nextPiece = randomPiece();
-        Tetromino t = nextPiece;
-        nextPiece = randomPiece();
-        active = new PieceState(t, 0, 0, 3);
-        if (!canPlace(active)) paused = true; // simple game-over
-    }
-    private Tetromino randomPiece() { return Tetromino.values()[rng.nextInt(Tetromino.values().length)]; }
+    /* =========================
+       Spawning / removal
+       ========================= */
+    private void spawnActivePiece() {
+        if (gameOver) return; // defensive – don't spawn when over
+        int spawnCol = GameConfig.get().spawnCol();
 
-    private boolean canPlace(PieceState p) {
-        int[][] m = p.type().shape(p.rot());
-        for (int r = 0; r < m.length; r++) {
-            for (int c = 0; c < m[r].length; c++) {
-                if (m[r][c] != 0) {
-                    int br = p.row() + r, bc = p.col() + c;
-                    if (!board.inBounds(br, bc) || board.get(br, bc) != 0) return false;
+        // If the spawn area is blocked we trigger game over
+        if (spawnAreaBlocked(spawnCol)) {
+            triggerGameOver();
+            return;
+        }
+
+        ActivePieceEntity piece = new ActivePieceEntity(board, null, spawnCol);
+        addEntityWithSprite(piece);
+    }
+
+    private void addEntityWithSprite(GameEntity e) {
+        entities.add(e);
+        Sprite s = SpriteFactory.create(e);
+        sprites.add(s);
+        boardLayer.getChildren().add(s.getNode());
+    }
+
+    private void removeDeadAndRespawn() {
+        for (Iterator<GameEntity> it = entities.iterator(); it.hasNext();) {
+            GameEntity e = it.next();
+            if (e.isDead()) {
+                // remove entity
+                it.remove();
+
+                // remove matching sprite (if any)
+                Sprite s = findSprite(e);
+                if (s != null) {
+                    sprites.remove(s);
+                    boardLayer.getChildren().remove(s.getNode());
+                }
+
+                // if the active piece died after locking, try to spawn a new one
+                if (e.entityType() == EntityType.ACTIVE_PIECE && !gameOver) {
+                    int spawnCol = GameConfig.get().spawnCol();
+                    if (spawnAreaBlocked(spawnCol)) {
+                        triggerGameOver();
+                    } else {
+                        spawnActivePiece();
+                    }
                 }
             }
         }
-        return true;
     }
 
-    private boolean tryMove(int dr, int dc, int drot) {
-        int newRot = active.rot();
-        if (drot != 0) newRot = (newRot + drot + active.type().rotationCount()) % active.type().rotationCount();
-        PieceState next = new PieceState(active.type(), newRot, active.row() + dr, active.col() + dc);
-        if (canPlace(next)) { active = next; return true; }
+    /** Checks a 4x4 spawn window near the configured spawn column for any placed blocks. */
+    private boolean spawnAreaBlocked(int spawnCol) {
+        int startCol = Math.max(0, Math.min(spawnCol - 1, Board.COLS - 4));
+        int endCol   = Math.min(Board.COLS - 1, startCol + 3);
+        int maxRows  = Math.min(4, Board.ROWS);
+
+        for (int r = 0; r < maxRows; r++) {
+            for (int c = startCol; c <= endCol; c++) {
+                if (board.get(r, c) != 0) return true;
+            }
+        }
         return false;
     }
 
-    private void lockPiece() {
-        int[][] m = active.type().shape(active.rot());
-        for (int r = 0; r < m.length; r++) {
-            for (int c = 0; c < m[r].length; c++) {
-                if (m[r][c] != 0) {
-                    int br = active.row() + r, bc = active.col() + c;
-                    if (board.inBounds(br, bc)) board.set(br, bc, active.type().colorId());
-                }
-            }
-        }
-        int cleared = board.clearFullRows();
-        if (cleared > 0) {
-            lines += cleared;
-            switch (cleared) {
-                case 1 -> score += 100;
-                case 2 -> score += 300;
-                case 3 -> score += 500;
-                case 4 -> score += 800;
-                default -> score += cleared * 100;
-            }
-        }
-        active = null;
+    private void triggerGameOver() {
+        gameOver = true;
+        paused = true;
+        pauseOverlay.setText("Game Over\nESC to Main Menu\nR to Restart");
+        pauseOverlay.setVisible(true);
     }
 
-    /* ============ input ============ */
+    private Sprite findSprite(GameEntity e) {
+        for (Sprite s : sprites) if (s.getEntity() == e) return s;
+        return null;
+    }
+
+    /* =========================
+       Input handling
+       ========================= */
     private void onKey(KeyEvent e) {
-        KeyCode k = e.getCode();
-        switch (k) {
-            case LEFT  -> tryMove(0, -1, 0);
-            case RIGHT -> tryMove(0, +1, 0);
-            case UP    -> tryMove(0, 0, +1);
-            case DOWN  -> { if (!tryMove(1, 0, 0)) lockPiece(); }
-            case P     -> { paused = !paused; pauseOverlay.setVisible(paused); }
+        // control the current active piece
+        ActivePieceEntity piece = entities.stream()
+                .filter(ge -> ge.entityType() == EntityType.ACTIVE_PIECE)
+                .map(ge -> (ActivePieceEntity) ge)
+                .findFirst().orElse(null);
+
+        switch (e.getCode()) {
+            case LEFT  -> { if (!paused && piece != null) piece.tryLeft(); }
+            case RIGHT -> { if (!paused && piece != null) piece.tryRight(); }
+            case UP    -> { if (!paused && piece != null) piece.tryRotateCW(); }
+            case DOWN  -> { if (!paused && piece != null) { if (!piece.trySoftDrop()) piece.kill(); } }
+            case P     -> { if (!gameOver) { paused = !paused; pauseOverlay.setVisible(paused); } }
             case ESCAPE -> { if (paused && onExitToMenu != null) onExitToMenu.run(); }
             case R     -> { if (paused) restartGame(); }
             default -> {}
         }
     }
 
-    /* ============ rendering (sprites) ============ */
-    private void drawSprites() {
-        // keep only the grid; re-add block nodes
-        boardLayer.getChildren().setAll(gridLayer);
+    /* =========================
+       Rendering of placed blocks
+       ========================= */
+    private void drawPlacedBlocks() {
+        // Remove any previous "placed" layer and recreate it
+        boardLayer.getChildren().removeIf(n -> "placed".equals(n.getUserData()));
 
-        tempSprites.clear();
+        Group placed = new Group();
+        placed.setUserData("placed");
 
-        // placed cells
         for (int r = 0; r < Board.ROWS; r++) {
             for (int c = 0; c < Board.COLS; c++) {
                 int v = board.get(r, c);
-                if (v != 0) addBlock(c, r, v);
-            }
-        }
+                if (v != 0) {
+                    var rect = new javafx.scene.shape.Rectangle(TILE, TILE);
+                    rect.setTranslateX(c * TILE);
+                    rect.setTranslateY(r * TILE);
+                    rect.setFill(colorFor(v));
+                    rect.setArcWidth(6); rect.setArcHeight(6);
+                    rect.setStroke(Color.color(0,0,0,0.35));
 
-        // active piece
-        if (active != null) {
-            int[][] m = active.type().shape(active.rot());
-            for (int r = 0; r < m.length; r++) {
-                for (int c = 0; c < m[r].length; c++) {
-                    if (m[r][c] != 0) addBlock(active.col() + c, active.row() + r, active.type().colorId());
+                    // top sheen
+                    var sheen = new javafx.scene.shape.Rectangle(TILE, TILE * 0.25);
+                    sheen.setTranslateX(c * TILE);
+                    sheen.setTranslateY(r * TILE);
+                    sheen.setFill(Color.color(1,1,1,0.10));
+
+                    placed.getChildren().addAll(rect, sheen);
                 }
             }
         }
 
-        // commit blocks
-        for (Sprite s : tempSprites) boardLayer.getChildren().add(s.getNode());
-    }
-
-    private void addBlock(int col, int row, int colorId) {
-        BlockSprite sprite = new BlockSprite(TILE, colorFor(colorId));
-        sprite.setXY(col * TILE, row * TILE);
-        tempSprites.add(sprite);
+        // ensure grid is at back (index 0), then placed, then piece sprite(s)
+        if (boardLayer.getChildren().isEmpty() || boardLayer.getChildren().get(0) != gridLayer) {
+            boardLayer.getChildren().add(0, gridLayer);
+        }
+        boardLayer.getChildren().add(1, placed);
     }
 
     private Color colorFor(int id) {
@@ -263,7 +333,9 @@ public class GameView extends AbstractScreen {
         };
     }
 
-    /* ============ HUD & restart ============ */
+    /* =========================
+       HUD + restart
+       ========================= */
     private void updateHud(long now) {
         long elapsedSec = Math.max(0, (now - runStartNanos) / 1_000_000_000L);
         long mm = elapsedSec / 60, ss = elapsedSec % 60;
@@ -273,17 +345,30 @@ public class GameView extends AbstractScreen {
     }
 
     private void restartGame() {
+        // clear board
         for (int r = 0; r < Board.ROWS; r++) {
             for (int c = 0; c < Board.COLS; c++) board.set(r, c, 0);
         }
-        score = 0; lines = 0; active = null; nextPiece = null;
-        lastDrop = 0; runStartNanos = System.nanoTime();
-        paused = false; pauseOverlay.setVisible(false);
-        drawSprites();
+        // clear entities/sprites
+        entities.clear();
+        sprites.clear();
+        boardLayer.getChildren().setAll(gridLayer);
+
+        score = 0;
+        lines = 0;
+        paused = false;
+        gameOver = false;
+        pauseOverlay.setText("Game Paused (P)\nESC to Main Menu\nR to Restart Game");
+        pauseOverlay.setVisible(false);
+
+        runStartNanos = System.nanoTime();
+        spawnActivePiece();
         requestFocus();
     }
 
-    /* ============ helpers ============ */
+    /* =========================
+       Helpers
+       ========================= */
     private void buildGrid(Group into) {
         into.getChildren().clear();
         Color gridColor = Color.color(1,1,1,0.10);
