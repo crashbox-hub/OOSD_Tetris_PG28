@@ -1,0 +1,55 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36" version="28.2.1">
+  <diagram name="Page-1" id="5qsyiiNrnrpD9g0uJJq5">
+    <mxGraphModel dx="1060" dy="517" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="pRPgc6NMmfIdejJRKuEU-1" value="Client Node" style="swimlane;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="110" y="85" width="510" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="pRPgc6NMmfIdejJRKuEU-2" value="org.oosd.core" style="swimlane;whiteSpace=wrap;html=1;" vertex="1" parent="pRPgc6NMmfIdejJRKuEU-1">
+          <mxGeometry x="30" y="80" width="166" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="pRPgc6NMmfIdejJRKuEU-3" value="AbstractScreen.java" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="pRPgc6NMmfIdejJRKuEU-2">
+          <mxGeometry x="18" y="30" width="130" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="pRPgc6NMmfIdejJRKuEU-4" value="org.oosd.game" style="swimlane;whiteSpace=wrap;html=1;" vertex="1" parent="pRPgc6NMmfIdejJRKuEU-1">
+          <mxGeometry x="270" y="90" width="166" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="pRPgc6NMmfIdejJRKuEU-5" value="Board.java" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="pRPgc6NMmfIdejJRKuEU-4">
+          <mxGeometry x="43" y="30" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="pRPgc6NMmfIdejJRKuEU-6" value="PieceState.java" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="pRPgc6NMmfIdejJRKuEU-4">
+          <mxGeometry x="30" y="60" width="110" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="pRPgc6NMmfIdejJRKuEU-7" value="Tetronimo.java" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="pRPgc6NMmfIdejJRKuEU-4">
+          <mxGeometry x="33" y="90" width="100" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="pRPgc6NMmfIdejJRKuEU-8" value="org.oosd.ui" style="swimlane;whiteSpace=wrap;html=1;" vertex="1" parent="pRPgc6NMmfIdejJRKuEU-1">
+          <mxGeometry x="50" y="225" width="166" height="185" as="geometry" />
+        </mxCell>
+        <mxCell id="pRPgc6NMmfIdejJRKuEU-9" value="ConfigurationView.java" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="pRPgc6NMmfIdejJRKuEU-8">
+          <mxGeometry x="8" y="30" width="150" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="pRPgc6NMmfIdejJRKuEU-10" value="GameView.java" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="pRPgc6NMmfIdejJRKuEU-8">
+          <mxGeometry x="30" y="60" width="110" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="pRPgc6NMmfIdejJRKuEU-11" value="HighScoresView.java" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="pRPgc6NMmfIdejJRKuEU-8">
+          <mxGeometry x="13" y="90" width="140" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="pRPgc6NMmfIdejJRKuEU-13" value="MainMenuView.java" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="pRPgc6NMmfIdejJRKuEU-8">
+          <mxGeometry x="23" y="120" width="130" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="pRPgc6NMmfIdejJRKuEU-14" value="SplashScreenView.java" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="pRPgc6NMmfIdejJRKuEU-8">
+          <mxGeometry x="8" y="150" width="150" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="pRPgc6NMmfIdejJRKuEU-16" value="Extends" style="endArrow=block;endSize=16;endFill=0;html=1;rounded=0;entryX=0.493;entryY=1.002;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" target="pRPgc6NMmfIdejJRKuEU-3">
+          <mxGeometry width="160" relative="1" as="geometry">
+            <mxPoint x="310" y="340" as="sourcePoint" />
+            <mxPoint x="470" y="340" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
