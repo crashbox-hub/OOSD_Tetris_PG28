@@ -49,6 +49,7 @@ public class GameView extends AbstractScreen {
     // World lists
     private final List<GameEntity> entities = new ArrayList<>();
     private final List<Sprite> sprites = new ArrayList<>();
+    private final List<GameEntity> toRemove = new ArrayList<>(); // safe removal queue
 
     // UI layers
     private final Group boardLayer = new Group(); // holds grid + placed + sprites
@@ -75,10 +76,10 @@ public class GameView extends AbstractScreen {
                 // 1) advance all entities with delta time
                 for (GameEntity e : entities) e.tick(now);
 
-                // 2) collect/remove dead and react (e.g., respawn on lock)
+                // 2) safe removal + respawn
                 removeDeadAndRespawn();
 
-                // 3) sync piece sprite to entity (board cells come from board)
+                // 3) sync piece sprites to entities
                 for (Sprite s : sprites) {
                     if (s instanceof PieceSprite ps) ps.syncToEntity();
                 }
@@ -97,7 +98,7 @@ public class GameView extends AbstractScreen {
                 }
             }
 
-            // 5) redraw placed cells (board grid) and overlay the piece sprite (already in layer)
+            // 5) redraw placed cells
             drawPlacedBlocks();
 
             // 6) HUD
@@ -134,7 +135,7 @@ public class GameView extends AbstractScreen {
         boardSurface.setPrefSize(BOARD_W, BOARD_H);
         boardSurface.setMaxSize(BOARD_W, BOARD_H);
 
-        // Pause / Game Over overlay (centered)
+        // Pause / Game Over overlay
         pauseOverlay.setText("Game Paused (P)\nESC to Main Menu\nR to Restart Game");
         pauseOverlay.setTextFill(Color.WHITE);
         pauseOverlay.setFont(Font.font("Arial", FontWeight.BOLD, 20));
@@ -142,7 +143,7 @@ public class GameView extends AbstractScreen {
         boardSurface.getChildren().add(pauseOverlay);
         StackPane.setAlignment(pauseOverlay, Pos.CENTER);
 
-        // ----- Framed game rectangle (board + HUD) -----
+        // ----- Framed game rectangle -----
         HBox gameRow = new HBox(16, boardSurface, hud);
         gameRow.getStyleClass().add("game-row");
 
@@ -150,7 +151,7 @@ public class GameView extends AbstractScreen {
         gameFrame.getStyleClass().add("board-frame");
         gameFrame.setPadding(new Insets(8));
 
-        // ----- Back button (separate, bottom) -----
+        // ----- Back button -----
         Button back = new Button("Back");
         back.getStyleClass().addAll("btn", "btn-ghost");
         back.setOnAction(e -> { if (onExitToMenu != null) onExitToMenu.run(); });
@@ -186,10 +187,9 @@ public class GameView extends AbstractScreen {
        Spawning / removal
        ========================= */
     private void spawnActivePiece() {
-        if (gameOver) return; // defensive – don't spawn when over
+        if (gameOver) return;
         int spawnCol = GameConfig.get().spawnCol();
 
-        // If the spawn area is blocked we trigger game over
         if (spawnAreaBlocked(spawnCol)) {
             triggerGameOver();
             return;
@@ -206,34 +206,34 @@ public class GameView extends AbstractScreen {
         boardLayer.getChildren().add(s.getNode());
     }
 
+    /** Safe removal using a staging list */
     private void removeDeadAndRespawn() {
-        for (Iterator<GameEntity> it = entities.iterator(); it.hasNext();) {
-            GameEntity e = it.next();
-            if (e.isDead()) {
-                // remove entity
-                it.remove();
+        for (GameEntity e : entities) {
+            if (e.isDead()) toRemove.add(e);
+        }
 
-                // remove matching sprite (if any)
-                Sprite s = findSprite(e);
-                if (s != null) {
-                    sprites.remove(s);
-                    boardLayer.getChildren().remove(s.getNode());
-                }
+        for (GameEntity e : toRemove) {
+            entities.remove(e);
 
-                // if the active piece died after locking, try to spawn a new one
-                if (e.entityType() == EntityType.ACTIVE_PIECE && !gameOver) {
-                    int spawnCol = GameConfig.get().spawnCol();
-                    if (spawnAreaBlocked(spawnCol)) {
-                        triggerGameOver();
-                    } else {
-                        spawnActivePiece();
-                    }
+            Sprite s = findSprite(e);
+            if (s != null) {
+                sprites.remove(s);
+                boardLayer.getChildren().remove(s.getNode());
+            }
+
+            if (e.entityType() == EntityType.ACTIVE_PIECE && !gameOver) {
+                int spawnCol = GameConfig.get().spawnCol();
+                if (spawnAreaBlocked(spawnCol)) {
+                    triggerGameOver();
+                } else {
+                    spawnActivePiece();
                 }
             }
         }
+
+        toRemove.clear();
     }
 
-    /** Checks a 4x4 spawn window near the configured spawn column for any placed blocks. */
     private boolean spawnAreaBlocked(int spawnCol) {
         int startCol = Math.max(0, Math.min(spawnCol - 1, Board.COLS - 4));
         int endCol   = Math.min(Board.COLS - 1, startCol + 3);
@@ -263,7 +263,6 @@ public class GameView extends AbstractScreen {
        Input handling
        ========================= */
     private void onKey(KeyEvent e) {
-        // control the current active piece
         ActivePieceEntity piece = entities.stream()
                 .filter(ge -> ge.entityType() == EntityType.ACTIVE_PIECE)
                 .map(ge -> (ActivePieceEntity) ge)
@@ -273,7 +272,7 @@ public class GameView extends AbstractScreen {
             case LEFT  -> { if (!paused && piece != null) piece.tryLeft(); }
             case RIGHT -> { if (!paused && piece != null) piece.tryRight(); }
             case UP    -> { if (!paused && piece != null) piece.tryRotateCW(); }
-            case DOWN  -> { if (!paused && piece != null) { if (!piece.trySoftDrop()) piece.kill(); } }
+            case DOWN  -> { if (!paused && piece != null) piece.softDropOrLock(); }
             case P     -> { if (!gameOver) { paused = !paused; pauseOverlay.setVisible(paused); } }
             case ESCAPE -> { if (paused && onExitToMenu != null) onExitToMenu.run(); }
             case R     -> { if (paused) restartGame(); }
@@ -285,7 +284,6 @@ public class GameView extends AbstractScreen {
        Rendering of placed blocks
        ========================= */
     private void drawPlacedBlocks() {
-        // Remove any previous "placed" layer and recreate it
         boardLayer.getChildren().removeIf(n -> "placed".equals(n.getUserData()));
 
         Group placed = new Group();
@@ -302,7 +300,6 @@ public class GameView extends AbstractScreen {
                     rect.setArcWidth(6); rect.setArcHeight(6);
                     rect.setStroke(Color.color(0,0,0,0.35));
 
-                    // top sheen
                     var sheen = new javafx.scene.shape.Rectangle(TILE, TILE * 0.25);
                     sheen.setTranslateX(c * TILE);
                     sheen.setTranslateY(r * TILE);
@@ -313,7 +310,6 @@ public class GameView extends AbstractScreen {
             }
         }
 
-        // ensure grid is at back (index 0), then placed, then piece sprite(s)
         if (boardLayer.getChildren().isEmpty() || boardLayer.getChildren().get(0) != gridLayer) {
             boardLayer.getChildren().add(0, gridLayer);
         }
@@ -322,13 +318,13 @@ public class GameView extends AbstractScreen {
 
     private Color colorFor(int id) {
         return switch (id) {
-            case 1 -> Color.CYAN;       // I
-            case 2 -> Color.YELLOW;     // O
-            case 3 -> Color.PURPLE;     // T
-            case 4 -> Color.LIMEGREEN;  // S
-            case 5 -> Color.RED;        // Z
-            case 6 -> Color.BLUE;       // J
-            case 7 -> Color.ORANGE;     // L
+            case 1 -> Color.CYAN;
+            case 2 -> Color.YELLOW;
+            case 3 -> Color.PURPLE;
+            case 4 -> Color.LIMEGREEN;
+            case 5 -> Color.RED;
+            case 6 -> Color.BLUE;
+            case 7 -> Color.ORANGE;
             default -> Color.GRAY;
         };
     }
@@ -345,11 +341,9 @@ public class GameView extends AbstractScreen {
     }
 
     private void restartGame() {
-        // clear board
         for (int r = 0; r < Board.ROWS; r++) {
             for (int c = 0; c < Board.COLS; c++) board.set(r, c, 0);
         }
-        // clear entities/sprites
         entities.clear();
         sprites.clear();
         boardLayer.getChildren().setAll(gridLayer);

@@ -2,9 +2,14 @@ package org.oosd.game;
 
 import java.util.Random;
 
+/**
+ * Falling piece driven by dt-based gravity.
+ * - When a downward step is blocked, the piece locks to the board and marks itself dead.
+ * - Exposes softDropOrLock() so UI can do a single-step soft drop safely.
+ */
 public class ActivePieceEntity extends GameEntity {
     private final Board board;
-    private PieceState state;       // holds Tetromino, rotation, top-left row/col (ints)
+    private PieceState state;              // Tetromino, rotation, row, col
     private final Random rng = new Random();
 
     public ActivePieceEntity(Board board, Tetromino next, int spawnCol) {
@@ -12,7 +17,7 @@ public class ActivePieceEntity extends GameEntity {
         this.board = board;
         Tetromino t = (next != null) ? next : randomPiece();
         this.state = new PieceState(t, 0, 0, spawnCol);
-        this.x = state.col(); // for rendering interpolation (cells)
+        this.x = state.col();
         this.y = state.row();
     }
 
@@ -23,13 +28,13 @@ public class ActivePieceEntity extends GameEntity {
 
     @Override
     protected void process(double dt) {
-        // Gravity in cells/second, from GameConfig
+        // gravity: cells/sec
         double gravity = org.oosd.core.GameConfig.get().gravityCps();
         double newY = y + gravity * dt;
 
-        // When passing next integral row, try to move piece down one row.
+        // Each time we cross an integral row boundary, try move down 1 cell.
         while (Math.floor(newY) > Math.floor(y)) {
-            if (!tryMove(1, 0, 0)) { // blocked => lock piece
+            if (!tryMove(1, 0, 0)) {    // cannot go down → lock & die
                 lockToBoard();
                 kill();
                 return;
@@ -38,11 +43,23 @@ public class ActivePieceEntity extends GameEntity {
         y = newY;
     }
 
+    /* --------- input helpers ---------- */
     public boolean tryRotateCW()  { return tryMove(0, 0, +1); }
     public boolean tryLeft()      { return tryMove(0, -1, 0); }
     public boolean tryRight()     { return tryMove(0, +1, 0); }
-    public boolean trySoftDrop()  { return tryMove(1, 0, 0);  }
 
+    /**
+     * One-cell soft drop. If blocked, locks to board and marks dead.
+     * @return true if moved down, false if locked.
+     */
+    public boolean softDropOrLock() {
+        if (tryMove(1, 0, 0)) return true;
+        lockToBoard();
+        kill();
+        return false;
+    }
+
+    /* --------- core movement ---------- */
     private boolean tryMove(int dr, int dc, int drot) {
         int newRot = state.rot();
         if (drot != 0) {
@@ -71,6 +88,7 @@ public class ActivePieceEntity extends GameEntity {
         return true;
     }
 
+    /** Write current piece cells into the board grid (bounds guarded). */
     private void lockToBoard() {
         int[][] m = state.type().shape(state.rot());
         for (int r = 0; r < m.length; r++) {
@@ -83,6 +101,6 @@ public class ActivePieceEntity extends GameEntity {
         }
     }
 
-    /* Accessors so the sprite can render the active piece */
+    /* Accessor for sprite */
     public PieceState piece() { return state; }
 }
