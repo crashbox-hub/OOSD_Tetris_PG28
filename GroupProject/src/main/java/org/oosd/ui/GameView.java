@@ -47,7 +47,7 @@ public class GameView extends AbstractScreen {
 
     // Entities/Sprites
     private final List<GameEntity> entities = new ArrayList<>();
-    private final List<Sprite> sprites = new ArrayList<>();
+    private final List<Sprite<?, ?>> sprites = new ArrayList<>();
 
     // Layers
     private final Group boardLayer = new Group();

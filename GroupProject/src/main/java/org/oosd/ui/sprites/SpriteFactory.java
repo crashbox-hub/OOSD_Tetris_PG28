@@ -7,16 +7,16 @@ import org.oosd.game.*;
 public final class SpriteFactory {
     private SpriteFactory() {}
 
-    /** Create a sprite for a given entity. Safe to call from the game thread. */
-    public static synchronized Sprite create(GameEntity e) {
+    /** Create a sprite for a given entity. */
+    public static synchronized Sprite<?, ?> create(GameEntity e) {
         int tile = GameConfig.get().tileSize();
 
         return switch (e.entityType()) {
             case ACTIVE_PIECE -> new PieceSprite((ActivePieceEntity) e);
             case BLOCK -> {
-                BlockEntity b = (BlockEntity)e;
+                BlockEntity b = (BlockEntity) e;
                 BlockSprite s = new BlockSprite(e, tile, colorFor(b.colorId()));
-                s.setXY(b.x()*tile, b.y()*tile);
+                s.setXY(b.x() * tile, b.y() * tile);
                 yield s;
             }
         };

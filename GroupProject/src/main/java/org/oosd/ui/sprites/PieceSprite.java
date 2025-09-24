@@ -5,12 +5,11 @@ import javafx.scene.Node;
 import javafx.scene.paint.Color;
 import org.oosd.core.GameConfig;
 import org.oosd.game.ActivePieceEntity;
-import org.oosd.game.GameEntity;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class PieceSprite implements Sprite {
+public class PieceSprite implements Sprite<ActivePieceEntity, Group> {
     private final ActivePieceEntity entity;
     private final Group group = new Group();
     private final List<BlockSprite> blocks = new ArrayList<>();
@@ -24,6 +23,7 @@ public class PieceSprite implements Sprite {
     private void rebuild() {
         group.getChildren().clear();
         blocks.clear();
+
         int[][] m = entity.piece().type().shape(entity.piece().rot());
         int colorId = entity.piece().type().colorId();
         Color fill = colorFor(colorId);
@@ -40,7 +40,7 @@ public class PieceSprite implements Sprite {
         syncToEntity(); // initial placement
     }
 
-    /** Update positions of the block nodes from entity row/col. */
+    /** Update the per-block positions from the entity's row/col. */
     public void syncToEntity() {
         int[][] m = entity.piece().type().shape(entity.piece().rot());
         int i = 0;
@@ -55,9 +55,10 @@ public class PieceSprite implements Sprite {
         }
     }
 
-    @Override public Node getNode() { return group; }
-    @Override public GameEntity getEntity() { return entity; }
-    @Override public void setXY(double x, double y) { group.setTranslateX(x); group.setTranslateY(y); }
+    @Override public Group getNode() { return group; }
+    @Override public ActivePieceEntity getEntity() { return entity; }
+
+    // setXY implemented by the default method in Sprite
 
     private static Color colorFor(int id) {
         return switch (id) {
