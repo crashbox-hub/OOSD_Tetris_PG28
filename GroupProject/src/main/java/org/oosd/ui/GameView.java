@@ -11,6 +11,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 
@@ -25,18 +26,16 @@ import org.oosd.ui.sprites.SpriteFactory;
 import java.util.*;
 
 /**
- * GameView (entity/sprite version).
- * - Uses GameConfig for sizing & timing.
- * - Active piece is a GameEntity updated with frame-rate independent logic.
- * - Sprites mirror entities; SpriteFactory builds the visuals.
- * - Board + HUD are enclosed in a framed rectangle; Back button is separate.
+ * GameView (entity/sprite version) with "Next" preview.
+ * - Piece-aware spawn check (only game-over if the actual next piece cannot fit).
+ * - Queue of next piece displayed in a 4x4 preview on the HUD.
  */
 public class GameView extends AbstractScreen {
 
     /* =========================
        Config-derived sizing
        ========================= */
-    private final int TILE = GameConfig.get().tileSize();
+    private final int TILE   = GameConfig.get().tileSize();
     private final int BOARD_W = Board.COLS * TILE;
     private final int BOARD_H = Board.ROWS * TILE;
 
@@ -46,14 +45,13 @@ public class GameView extends AbstractScreen {
     private final Board board = new Board();
     private final Runnable onExitToMenu;
 
-    // World lists
+    // Entities/Sprites
     private final List<GameEntity> entities = new ArrayList<>();
     private final List<Sprite> sprites = new ArrayList<>();
-    private final List<GameEntity> toRemove = new ArrayList<>(); // safe removal queue
 
-    // UI layers
-    private final Group boardLayer = new Group(); // holds grid + placed + sprites
-    private final Group gridLayer  = new Group(); // static faint grid
+    // Layers
+    private final Group boardLayer = new Group();
+    private final Group gridLayer  = new Group();
 
     // HUD
     private final Label scoreLabel = new Label("SCORE 0");
@@ -61,11 +59,21 @@ public class GameView extends AbstractScreen {
     private final Label timeLabel  = new Label("TIME 00:00");
     private final Label pauseOverlay = new Label();
 
+    // "Next" piece preview
+    private final StackPane nextBox = new StackPane(); // fixed 4x4 area
+    private final Group     nextLayer = new Group();   // we redraw shapes here
+
+    private Tetromino nextPiece = null;   // queued piece (displayed)
+    private final Random rng = new Random();
+
     private boolean paused = false;
     private boolean gameOver = false;
     private int score = 0;
     private int lines = 0;
     private long runStartNanos = 0L;
+
+    // queue a spawn to avoid modifying entities during iteration
+    private boolean spawnQueued = false;
 
     /* =========================
        Main loop (FPS independent)
@@ -73,18 +81,22 @@ public class GameView extends AbstractScreen {
     private final AnimationTimer loop = new AnimationTimer() {
         @Override public void handle(long now) {
             if (!paused) {
-                // 1) advance all entities with delta time
+                // 1) advance entities
                 for (GameEntity e : entities) e.tick(now);
 
-                // 2) safe removal + respawn
+                // 2) cleanup (defer spawn to after loop)
                 removeDeadAndRespawn();
 
-                // 3) sync piece sprites to entities
-                for (Sprite s : sprites) {
-                    if (s instanceof PieceSprite ps) ps.syncToEntity();
+                // ---- perform deferred spawns safely (prevents CME) ----
+                if (spawnQueued && !gameOver) {
+                    spawnQueued = false;
+                    spawnActivePiece();    // will also refresh Next preview
                 }
 
-                // 4) scoring – clear rows that were filled by a lock
+                // 3) sync piece sprites
+                for (Sprite s : sprites) if (s instanceof PieceSprite ps) ps.syncToEntity();
+
+                // 4) clear rows + score
                 int cleared = board.clearFullRows();
                 if (cleared > 0) {
                     lines += cleared;
@@ -98,7 +110,7 @@ public class GameView extends AbstractScreen {
                 }
             }
 
-            // 5) redraw placed cells
+            // 5) redraw placed blocks
             drawPlacedBlocks();
 
             // 6) HUD
@@ -112,7 +124,7 @@ public class GameView extends AbstractScreen {
     public GameView(Runnable onExitToMenu) {
         this.onExitToMenu = onExitToMenu;
 
-        // ----- HUD (right column) -----
+        // ----- HUD -----
         var hud = new VBox(16);
         hud.setAlignment(Pos.TOP_LEFT);
         hud.getStyleClass().add("hud");
@@ -120,10 +132,24 @@ public class GameView extends AbstractScreen {
         Label nextTitle = new Label("NEXT");
         nextTitle.getStyleClass().add("hud-title");
 
+        // Next box: 4x4 tiles area
+        double nbSize = 4 * TILE;
+        nextBox.setMinSize(nbSize, nbSize);
+        nextBox.setPrefSize(nbSize, nbSize);
+        nextBox.setMaxSize(nbSize, nbSize);
+        nextBox.getChildren().add(nextLayer);
+        nextBox.setStyle(
+                "-fx-background-color: rgba(12,18,28,1.0);" +
+                        "-fx-border-color: rgba(255,255,255,0.18);" +
+                        "-fx-border-width: 1;" +
+                        "-fx-background-radius: 6;" +
+                        "-fx-border-radius: 6;"
+        );
+
         for (Label lbl : new Label[]{scoreLabel, linesLabel, timeLabel}) {
             lbl.getStyleClass().add("hud-label");
         }
-        hud.getChildren().addAll(nextTitle, new Label(""), scoreLabel, linesLabel, timeLabel);
+        hud.getChildren().addAll(nextTitle, nextBox, scoreLabel, linesLabel, timeLabel);
 
         // ----- Board surface + grid -----
         buildGrid(gridLayer);
@@ -143,7 +169,7 @@ public class GameView extends AbstractScreen {
         boardSurface.getChildren().add(pauseOverlay);
         StackPane.setAlignment(pauseOverlay, Pos.CENTER);
 
-        // ----- Framed game rectangle -----
+        // ----- Frame + Back button -----
         HBox gameRow = new HBox(16, boardSurface, hud);
         gameRow.getStyleClass().add("game-row");
 
@@ -151,7 +177,6 @@ public class GameView extends AbstractScreen {
         gameFrame.getStyleClass().add("board-frame");
         gameFrame.setPadding(new Insets(8));
 
-        // ----- Back button -----
         Button back = new Button("Back");
         back.getStyleClass().addAll("btn", "btn-ghost");
         back.setOnAction(e -> { if (onExitToMenu != null) onExitToMenu.run(); });
@@ -159,18 +184,18 @@ public class GameView extends AbstractScreen {
         HBox backBar = new HBox(back);
         backBar.getStyleClass().add("center-bar");
 
-        // ----- Root -----
         VBox root = new VBox(12, gameFrame, backBar);
         root.getStyleClass().add("app-bg");
         root.setFillWidth(false);
         getChildren().add(root);
 
-        // Input focus + keys
         setFocusTraversable(true);
         setOnKeyPressed(this::onKey);
 
-        // Start with one active piece
-        spawnActivePiece();
+        // Prime queue + spawn first active piece
+        nextPiece = randomPiece();
+        spawnActivePiece();          // uses queued piece, then rolls the next
+        drawNextPreview();           // reflect current "next"
     }
 
     /* =========================
@@ -186,17 +211,41 @@ public class GameView extends AbstractScreen {
     /* =========================
        Spawning / removal
        ========================= */
+
+    private Tetromino randomPiece() {
+        Tetromino[] all = Tetromino.values();
+        return all[rng.nextInt(all.length)];
+    }
+
+    /**
+     * Spawn the queued piece (nextPiece) if it fits at row 0; then queue a new next.
+     * Uses a piece-aware game-over check and column clamping by piece width.
+     */
     private void spawnActivePiece() {
         if (gameOver) return;
-        int spawnCol = GameConfig.get().spawnCol();
 
-        if (spawnAreaBlocked(spawnCol)) {
+        // safety: if queue somehow empty
+        if (nextPiece == null) nextPiece = randomPiece();
+
+        Tetromino t = nextPiece;
+
+        // Clamp column for the piece width (rotation 0 used for spawn)
+        int desiredCol = GameConfig.get().spawnCol();
+        int width = pieceWidth(t, 0);
+        int col = Math.max(0, Math.min(desiredCol, Board.COLS - width));
+
+        if (!canPlaceAt(t, 0, 0, col)) {
             triggerGameOver();
             return;
         }
 
-        ActivePieceEntity piece = new ActivePieceEntity(board, null, spawnCol);
+        // Create entity for the queued piece
+        ActivePieceEntity piece = new ActivePieceEntity(board, t, col);
         addEntityWithSprite(piece);
+
+        // Roll the next and refresh preview
+        nextPiece = randomPiece();
+        drawNextPreview();
     }
 
     private void addEntityWithSprite(GameEntity e) {
@@ -206,45 +255,31 @@ public class GameView extends AbstractScreen {
         boardLayer.getChildren().add(s.getNode());
     }
 
-    /** Safe removal using a staging list */
     private void removeDeadAndRespawn() {
-        for (GameEntity e : entities) {
-            if (e.isDead()) toRemove.add(e);
-        }
+        for (Iterator<GameEntity> it = entities.iterator(); it.hasNext();) {
+            GameEntity e = it.next();
+            if (e.isDead()) {
+                // remove entity
+                it.remove();
 
-        for (GameEntity e : toRemove) {
-            entities.remove(e);
+                // remove matching sprite (if any)
+                Sprite s = findSprite(e);
+                if (s != null) {
+                    sprites.remove(s);
+                    boardLayer.getChildren().remove(s.getNode());
+                }
 
-            Sprite s = findSprite(e);
-            if (s != null) {
-                sprites.remove(s);
-                boardLayer.getChildren().remove(s.getNode());
-            }
-
-            if (e.entityType() == EntityType.ACTIVE_PIECE && !gameOver) {
-                int spawnCol = GameConfig.get().spawnCol();
-                if (spawnAreaBlocked(spawnCol)) {
-                    triggerGameOver();
-                } else {
-                    spawnActivePiece();
+                // don't spawn here; just queue it (spawn happens after loop)
+                if (e.entityType() == EntityType.ACTIVE_PIECE && !gameOver) {
+                    spawnQueued = true;
                 }
             }
         }
-
-        toRemove.clear();
     }
 
-    private boolean spawnAreaBlocked(int spawnCol) {
-        int startCol = Math.max(0, Math.min(spawnCol - 1, Board.COLS - 4));
-        int endCol   = Math.min(Board.COLS - 1, startCol + 3);
-        int maxRows  = Math.min(4, Board.ROWS);
-
-        for (int r = 0; r < maxRows; r++) {
-            for (int c = startCol; c <= endCol; c++) {
-                if (board.get(r, c) != 0) return true;
-            }
-        }
-        return false;
+    private Sprite findSprite(GameEntity e) {
+        for (Sprite s : sprites) if (s.getEntity() == e) return s;
+        return null;
     }
 
     private void triggerGameOver() {
@@ -252,11 +287,6 @@ public class GameView extends AbstractScreen {
         paused = true;
         pauseOverlay.setText("Game Over\nESC to Main Menu\nR to Restart");
         pauseOverlay.setVisible(true);
-    }
-
-    private Sprite findSprite(GameEntity e) {
-        for (Sprite s : sprites) if (s.getEntity() == e) return s;
-        return null;
     }
 
     /* =========================
@@ -293,14 +323,14 @@ public class GameView extends AbstractScreen {
             for (int c = 0; c < Board.COLS; c++) {
                 int v = board.get(r, c);
                 if (v != 0) {
-                    var rect = new javafx.scene.shape.Rectangle(TILE, TILE);
+                    Rectangle rect = new Rectangle(TILE, TILE);
                     rect.setTranslateX(c * TILE);
                     rect.setTranslateY(r * TILE);
                     rect.setFill(colorFor(v));
                     rect.setArcWidth(6); rect.setArcHeight(6);
                     rect.setStroke(Color.color(0,0,0,0.35));
 
-                    var sheen = new javafx.scene.shape.Rectangle(TILE, TILE * 0.25);
+                    Rectangle sheen = new Rectangle(TILE, TILE * 0.25);
                     sheen.setTranslateX(c * TILE);
                     sheen.setTranslateY(r * TILE);
                     sheen.setFill(Color.color(1,1,1,0.10));
@@ -318,15 +348,19 @@ public class GameView extends AbstractScreen {
 
     private Color colorFor(int id) {
         return switch (id) {
-            case 1 -> Color.CYAN;
-            case 2 -> Color.YELLOW;
-            case 3 -> Color.PURPLE;
-            case 4 -> Color.LIMEGREEN;
-            case 5 -> Color.RED;
-            case 6 -> Color.BLUE;
-            case 7 -> Color.ORANGE;
+            case 1 -> Color.CYAN;       // I
+            case 2 -> Color.YELLOW;     // O
+            case 3 -> Color.PURPLE;     // T
+            case 4 -> Color.LIMEGREEN;  // S
+            case 5 -> Color.RED;        // Z
+            case 6 -> Color.BLUE;       // J
+            case 7 -> Color.ORANGE;     // L
             default -> Color.GRAY;
         };
+    }
+
+    private Color colorFor(Tetromino t) {
+        return colorFor(t.colorId());
     }
 
     /* =========================
@@ -341,9 +375,10 @@ public class GameView extends AbstractScreen {
     }
 
     private void restartGame() {
-        for (int r = 0; r < Board.ROWS; r++) {
-            for (int c = 0; c < Board.COLS; c++) board.set(r, c, 0);
-        }
+        for (int r = 0; r < Board.ROWS; r++)
+            for (int c = 0; c < Board.COLS; c++)
+                board.set(r, c, 0);
+
         entities.clear();
         sprites.clear();
         boardLayer.getChildren().setAll(gridLayer);
@@ -356,13 +391,80 @@ public class GameView extends AbstractScreen {
         pauseOverlay.setVisible(false);
 
         runStartNanos = System.nanoTime();
+
+        // reset queue and spawn
+        nextPiece = randomPiece();
         spawnActivePiece();
+        drawNextPreview();
+
         requestFocus();
     }
 
     /* =========================
-       Helpers
+       Helpers (spawn + next)
        ========================= */
+
+    /** width in cells of the given rotation matrix (assumes rectangular) */
+    private int pieceWidth(Tetromino t, int rot) {
+        int[][] m = t.shape(rot);
+        return (m.length == 0) ? 0 : m[0].length;
+    }
+
+    /** Can the given piece/rotation be placed at board row/col? */
+    private boolean canPlaceAt(Tetromino t, int rot, int row, int col) {
+        int[][] m = t.shape(rot);
+        for (int r = 0; r < m.length; r++) {
+            for (int c = 0; c < m[r].length; c++) {
+                if (m[r][c] != 0) {
+                    int br = row + r, bc = col + c;
+                    if (br < 0 || br >= Board.ROWS || bc < 0 || bc >= Board.COLS) return false;
+                    if (board.get(br, bc) != 0) return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /** Draw the queued next piece centered in the 4x4 preview box. */
+    private void drawNextPreview() {
+        nextLayer.getChildren().clear();
+        if (nextPiece == null) return;
+
+        int[][] m = nextPiece.shape(0);
+        int w = (m.length == 0) ? 0 : m[0].length;
+        int h = m.length;
+
+        // center within 4x4
+        int xOff = (4 - w) * TILE / 2;
+        int yOff = (4 - h) * TILE / 2;
+
+        Color fill = colorFor(nextPiece);
+
+        for (int r = 0; r < h; r++) {
+            for (int c = 0; c < w; c++) {
+                if (m[r][c] != 0) {
+                    double x = c * TILE + xOff;
+                    double y = r * TILE + yOff;
+
+                    Rectangle rect = new Rectangle(TILE, TILE);
+                    rect.setTranslateX(x);
+                    rect.setTranslateY(y);
+                    rect.setFill(fill);
+                    rect.setArcWidth(6); rect.setArcHeight(6);
+                    rect.setStroke(Color.color(0,0,0,0.35));
+
+                    Rectangle sheen = new Rectangle(TILE, TILE * 0.25);
+                    sheen.setTranslateX(x);
+                    sheen.setTranslateY(y);
+                    sheen.setFill(Color.color(1,1,1,0.10));
+
+                    nextLayer.getChildren().addAll(rect, sheen);
+                }
+            }
+        }
+    }
+
+    /** Build faint grid lines once. */
     private void buildGrid(Group into) {
         into.getChildren().clear();
         Color gridColor = Color.color(1,1,1,0.10);
