@@ -26,9 +26,10 @@ import org.oosd.ui.sprites.SpriteFactory;
 import java.util.*;
 
 /**
- * GameView (entity/sprite version) with "Next" preview.
+ * GameView (entity/sprite version) with "Next" preview + flying +N message on line clears.
  * - Piece-aware spawn check (only game-over if the actual next piece cannot fit).
  * - Queue of next piece displayed in a 4x4 preview on the HUD.
+ * - Flying message layer shows +N for 3s when lines are cleared.
  */
 public class GameView extends AbstractScreen {
 
@@ -50,8 +51,9 @@ public class GameView extends AbstractScreen {
     private final List<Sprite<?, ?>> sprites = new ArrayList<>();
 
     // Layers
-    private final Group boardLayer = new Group();
-    private final Group gridLayer  = new Group();
+    private final Group boardLayer = new Group(); // grid + placed + piece sprite(s)
+    private final Group gridLayer  = new Group(); // faint grid (bottom-most)
+    private final Group fxLayer    = new Group(); // transient flying messages (top of board)
 
     // HUD
     private final Label scoreLabel = new Label("SCORE 0");
@@ -94,9 +96,11 @@ public class GameView extends AbstractScreen {
                 }
 
                 // 3) sync piece sprites
-                for (Sprite s : sprites) if (s instanceof PieceSprite ps) ps.syncToEntity();
+                for (Sprite<?, ?> s : sprites) {
+                    if (s instanceof PieceSprite ps) ps.syncToEntity();
+                }
 
-                // 4) clear rows + score
+                // 4) clear rows + score (+ flying message)
                 int cleared = board.clearFullRows();
                 if (cleared > 0) {
                     lines += cleared;
@@ -107,6 +111,8 @@ public class GameView extends AbstractScreen {
                         case 4 -> score += 800;
                         default -> score += cleared * 100;
                     }
+                    // flying “+N” message near board center
+                    showFlyingMessage("+" + cleared, BOARD_W / 2.0 - TILE, BOARD_H / 2.0);
                 }
             }
 
@@ -155,7 +161,8 @@ public class GameView extends AbstractScreen {
         buildGrid(gridLayer);
         boardLayer.getChildren().add(gridLayer);
 
-        StackPane boardSurface = new StackPane(boardLayer);
+        // Stack the board, fx messages, then add pause overlay as another child
+        StackPane boardSurface = new StackPane(boardLayer, fxLayer);
         boardSurface.getStyleClass().add("board-surface");
         boardSurface.setMinSize(BOARD_W, BOARD_H);
         boardSurface.setPrefSize(BOARD_W, BOARD_H);
@@ -250,7 +257,7 @@ public class GameView extends AbstractScreen {
 
     private void addEntityWithSprite(GameEntity e) {
         entities.add(e);
-        Sprite s = SpriteFactory.create(e);
+        Sprite<?, ?> s = SpriteFactory.create(e);
         sprites.add(s);
         boardLayer.getChildren().add(s.getNode());
     }
@@ -263,7 +270,7 @@ public class GameView extends AbstractScreen {
                 it.remove();
 
                 // remove matching sprite (if any)
-                Sprite s = findSprite(e);
+                Sprite<?, ?> s = findSprite(e);
                 if (s != null) {
                     sprites.remove(s);
                     boardLayer.getChildren().remove(s.getNode());
@@ -277,8 +284,8 @@ public class GameView extends AbstractScreen {
         }
     }
 
-    private Sprite findSprite(GameEntity e) {
-        for (Sprite s : sprites) if (s.getEntity() == e) return s;
+    private Sprite<?, ?> findSprite(GameEntity e) {
+        for (Sprite<?, ?> s : sprites) if (s.getEntity() == e) return s;
         return null;
     }
 
@@ -478,5 +485,38 @@ public class GameView extends AbstractScreen {
             line.setStroke(gridColor);
             into.getChildren().add(line);
         }
+    }
+
+    /* =========================
+       Flying message helper
+       ========================= */
+    private void showFlyingMessage(String text, double startX, double startY) {
+        Label msg = new Label(text);
+        // color by number of lines for a tiny bit of flair
+        Color fill = switch (text) {
+            case "+1" -> Color.LIMEGREEN;
+            case "+2" -> Color.AQUA;
+            case "+3" -> Color.ORCHID;
+            case "+4" -> Color.GOLD;
+            default -> Color.LIMEGREEN;
+        };
+        msg.setTextFill(fill);
+        msg.setFont(Font.font("Arial", FontWeight.BOLD, 20));
+        msg.setTranslateX(startX);
+        msg.setTranslateY(startY);
+
+        fxLayer.getChildren().add(msg);
+
+        // 3s upward drift + fade
+        var move = new javafx.animation.TranslateTransition(javafx.util.Duration.seconds(3), msg);
+        move.setByY(-50);
+
+        var fade = new javafx.animation.FadeTransition(javafx.util.Duration.seconds(3), msg);
+        fade.setFromValue(1.0);
+        fade.setToValue(0.0);
+
+        var anim = new javafx.animation.ParallelTransition(move, fade);
+        anim.setOnFinished(e -> fxLayer.getChildren().remove(msg));
+        anim.play();
     }
 }
