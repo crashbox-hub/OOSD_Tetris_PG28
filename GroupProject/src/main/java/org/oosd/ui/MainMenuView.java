@@ -2,16 +2,11 @@ package org.oosd.ui;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.Label;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import org.oosd.core.AbstractScreen;
 
+/** Main Menu with Play, Configuration, High Scores, Exit (FR-02..FR-09). */
 public class MainMenuView extends AbstractScreen {
 
     public MainMenuView(Runnable onPlay,
@@ -19,66 +14,43 @@ public class MainMenuView extends AbstractScreen {
                         Runnable onHighScores,
                         Runnable onExit) {
 
-        // Background container
-        StackPane bg = new StackPane();
-        bg.getStyleClass().add("app-bg");      // gradient + padding (styles.css)
+        Button playBtn  = new Button("Play");
+        Button cfgBtn   = new Button("Configuration");
+        Button scoreBtn = new Button("High Scores");
+        Button exitBtn  = new Button("Exit");
 
-        // Panel / card
-        VBox panel = new VBox(10);
-        panel.getStyleClass().add("panel");    // card gradient + border + shadow
-        panel.setAlignment(Pos.CENTER);
-        panel.setPadding(new Insets(20));
+        playBtn.setMaxWidth(Double.MAX_VALUE);
+        cfgBtn.setMaxWidth(Double.MAX_VALUE);
+        scoreBtn.setMaxWidth(Double.MAX_VALUE);
+        exitBtn.setMaxWidth(Double.MAX_VALUE);
 
-        // Title
-        Label title = new Label("TETRIS");
-        title.getStyleClass().addAll("title", "title-xxl");
-
-        // Buttons
-        Button startButton     = new Button("Start Game");
-        Button configButton    = new Button("Configuration");
-        Button highScoresButton= new Button("High Scores");
-        Button exitButton      = new Button("Exit");
-
-        startButton.getStyleClass().addAll("btn", "btn-primary");
-        configButton.getStyleClass().addAll("btn", "btn-secondary");
-        highScoresButton.getStyleClass().addAll("btn", "btn-secondary");
-        exitButton.getStyleClass().addAll("btn", "btn-ghost");
-
-        startButton.setOnAction(e -> { if (onPlay != null) onPlay.run(); });
-        configButton.setOnAction(e -> { if (onConfig != null) onConfig.run(); });
-        highScoresButton.setOnAction(e -> { if (onHighScores != null) onHighScores.run(); });
-        exitButton.setOnAction(e -> {
-            var alert = new Alert(Alert.AlertType.CONFIRMATION);
+        playBtn.setOnAction(e -> { if (onPlay != null) onPlay.run(); });
+        cfgBtn.setOnAction(e -> { if (onConfig != null) onConfig.run(); });
+        scoreBtn.setOnAction(e -> { if (onHighScores != null) onHighScores.run(); });
+        exitBtn.setOnAction(e -> {
+            var alert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.CONFIRMATION);
             alert.setTitle("Exit");
             alert.setHeaderText("Exit the game?");
             alert.setContentText("Are you sure you want to quit?");
-            var yes = new ButtonType("Yes", ButtonBar.ButtonData.OK_DONE);
-            var no  = new ButtonType("No",  ButtonBar.ButtonData.CANCEL_CLOSE);
+            var yes = new javafx.scene.control.ButtonType("Yes", javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+            var no  = new javafx.scene.control.ButtonType("No",  javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
             alert.getButtonTypes().setAll(yes, no);
+
             var result = alert.showAndWait();
-            if (result.isPresent() && result.get() == yes && onExit != null) onExit.run();
-        });
-
-        VBox buttons = new VBox(12, startButton, configButton, highScoresButton, exitButton);
-        buttons.setAlignment(Pos.CENTER);
-
-        panel.getChildren().addAll(title, buttons);
-        bg.getChildren().add(panel);
-        getChildren().add(bg);
-
-        // Keyboard shortcuts
-        setOnKeyPressed(e -> {
-            switch (e.getCode()) {
-                case ENTER, SPACE -> startButton.fire();
-                case C -> configButton.fire();
-                case H -> highScoresButton.fire();
-                case ESCAPE, Q -> exitButton.fire();
-                default -> {}
+            if (result.isPresent() && result.get() == yes) {
+                if (onExit != null) {
+                    onExit.run();
+                }
             }
         });
-        setFocusTraversable(true);
+
+        VBox root = new VBox(12, playBtn, cfgBtn, scoreBtn, exitBtn);
+        root.setAlignment(Pos.CENTER);
+        root.setPadding(new Insets(24));
+
+        getChildren().add(root);
     }
 
-    @Override public void onShow() { requestFocus(); }
-    @Override public void onHide() { }
+    @Override public void onShow() { /* no-op */ }
+    @Override public void onHide() { /* no-op */ }
 }

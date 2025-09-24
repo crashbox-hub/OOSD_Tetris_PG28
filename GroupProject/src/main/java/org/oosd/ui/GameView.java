@@ -14,6 +14,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+
 import org.oosd.core.AbstractScreen;
 import org.oosd.game.Board;
 import org.oosd.game.PieceState;
@@ -25,6 +26,15 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
+/**
+ * Gameplay screen with:
+ *  - Grid + block sprites (no Canvas)
+ *  - Falling piece control (left/right/rotate/soft drop)
+ *  - Gravity via AnimationTimer
+ *  - Scoring + lines + elapsed time HUD
+ *  - Pause (P) overlay and exit-to-main (ESC while paused)
+ *  - Light styling (gradient bg, framed board, glossy tiles)
+ */
 public class GameView extends AbstractScreen {
 
     /* ============ sizes ============ */
@@ -52,6 +62,8 @@ public class GameView extends AbstractScreen {
     private final Group boardLayer = new Group(); // holds gridLayer + blocks
 
     private final Label pauseOverlay = new Label();
+
+    // HUD labels (score, lines, time)
     private final Label scoreLabel = new Label("SCORE 0");
     private final Label linesLabel = new Label("LINES 0");
     private final Label timeLabel  = new Label("TIME 00:00");
@@ -61,8 +73,12 @@ public class GameView extends AbstractScreen {
     private final AnimationTimer loop = new AnimationTimer() {
         @Override public void handle(long now) {
             if (!paused) {
+                // Ensure a piece exists
                 if (active == null) spawn();
+
+                // Apply gravity step if interval elapsed
                 if (now - lastDrop >= dropIntervalNanos) {
+                    // Move down one; if blocked, lock into board
                     if (!tryMove(1, 0, 0)) lockPiece();
                     lastDrop = now;
                 }
@@ -84,9 +100,9 @@ public class GameView extends AbstractScreen {
         nextTitle.getStyleClass().add("hud-title");
 
         for (Label lbl : new Label[]{scoreLabel, linesLabel, timeLabel}) {
-            lbl.getStyleClass().add("hud-label");
+            lbl.setTextFill(Color.WHITE);
+            lbl.setFont(Font.font(14));
         }
-
         hud.getChildren().addAll(nextTitle, new Label(""), scoreLabel, linesLabel, timeLabel);
 
         /* ---------- Grid + board layer ---------- */
@@ -138,22 +154,24 @@ public class GameView extends AbstractScreen {
 
     /* ============ lifecycle ============ */
     @Override public void onShow() {
+        // when screen becomes visible: focus, reset timer, start loop
         requestFocus();
         lastDrop = 0;
         runStartNanos = System.nanoTime();
         loop.start();
     }
-    @Override public void onHide() { loop.stop(); }
 
     /* ============ gameplay ============ */
     private void spawn() {
-        if (nextPiece == null) nextPiece = randomPiece();
+        if (nextPiece == null) nextPiece = randomPiece(); // ensure queue has a piece
         Tetromino t = nextPiece;
         nextPiece = randomPiece();
         active = new PieceState(t, 0, 0, 3);
         if (!canPlace(active)) paused = true; // simple game-over
     }
-    private Tetromino randomPiece() { return Tetromino.values()[rng.nextInt(Tetromino.values().length)]; }
+    private Tetromino randomPiece() {
+        return Tetromino.values()[rng.nextInt(Tetromino.values().length)];
+    }
 
     private boolean canPlace(PieceState p) {
         int[][] m = p.type().shape(p.rot());
@@ -170,13 +188,16 @@ public class GameView extends AbstractScreen {
 
     private boolean tryMove(int dr, int dc, int drot) {
         int newRot = active.rot();
-        if (drot != 0) newRot = (newRot + drot + active.type().rotationCount()) % active.type().rotationCount();
+        if (drot != 0) {
+            newRot = (newRot + drot + active.type().rotationCount()) % active.type().rotationCount();
+        }
         PieceState next = new PieceState(active.type(), newRot, active.row() + dr, active.col() + dc);
         if (canPlace(next)) { active = next; return true; }
         return false;
     }
 
     private void lockPiece() {
+        // write active piece blocks into the board grid
         int[][] m = active.type().shape(active.rot());
         for (int r = 0; r < m.length; r++) {
             for (int c = 0; c < m[r].length; c++) {
@@ -186,6 +207,8 @@ public class GameView extends AbstractScreen {
                 }
             }
         }
+
+        // clear full rows and award points (simple classic-ish values)
         int cleared = board.clearFullRows();
         if (cleared > 0) {
             lines += cleared;
@@ -197,6 +220,8 @@ public class GameView extends AbstractScreen {
                 default -> score += cleared * 100;
             }
         }
+
+        // force a respawn on the next frame
         active = null;
     }
 
