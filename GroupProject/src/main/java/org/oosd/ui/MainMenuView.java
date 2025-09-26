@@ -87,6 +87,12 @@ public class MainMenuView extends AbstractScreen {
         setFocusTraversable(true);
     }
 
-    @Override public void onShow() { requestFocus(); }
-    @Override public void onHide() { }
+    @Override public void onShow() {
+        requestFocus();
+        org.oosd.ui.Sound.startMenuBgm();
+    }
+    @Override public void onHide() {
+        org.oosd.ui.Sound.stopBgm();
+    }
+
 }

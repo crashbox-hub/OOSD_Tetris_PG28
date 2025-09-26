@@ -111,7 +111,8 @@ public class GameView extends AbstractScreen {
                         case 4 -> score += 800;
                         default -> score += cleared * 100;
                     }
-                    // flying “+N” message near board center
+                    // play SFX and show flying “+N”
+                    org.oosd.ui.Sound.playLine();
                     showFlyingMessage("+" + cleared, BOARD_W / 2.0 - TILE, BOARD_H / 2.0);
                 }
             }
@@ -211,14 +212,17 @@ public class GameView extends AbstractScreen {
     @Override public void onShow() {
         requestFocus();
         runStartNanos = System.nanoTime();
+        org.oosd.ui.Sound.startGameBgm();
         loop.start();
     }
-    @Override public void onHide() { loop.stop(); }
+    @Override public void onHide() {
+        loop.stop();
+        org.oosd.ui.Sound.stopBgm();
+    }
 
     /* =========================
        Spawning / removal
        ========================= */
-
     private Tetromino randomPiece() {
         Tetromino[] all = Tetromino.values();
         return all[rng.nextInt(all.length)];
@@ -294,7 +298,9 @@ public class GameView extends AbstractScreen {
         paused = true;
         pauseOverlay.setText("Game Over\nESC to Main Menu\nR to Restart");
         pauseOverlay.setVisible(true);
+        org.oosd.ui.Sound.stopBgm(); org.oosd.ui.Sound.playGameOver(); // <-- add this
     }
+
 
     /* =========================
        Input handling
@@ -306,13 +312,35 @@ public class GameView extends AbstractScreen {
                 .findFirst().orElse(null);
 
         switch (e.getCode()) {
-            case LEFT  -> { if (!paused && piece != null) piece.tryLeft(); }
-            case RIGHT -> { if (!paused && piece != null) piece.tryRight(); }
-            case UP    -> { if (!paused && piece != null) piece.tryRotateCW(); }
-            case DOWN  -> { if (!paused && piece != null) piece.softDropOrLock(); }
-            case P     -> { if (!gameOver) { paused = !paused; pauseOverlay.setVisible(paused); } }
+            case LEFT -> {
+                if (!paused && piece != null) {
+                    piece.tryLeft();
+                }
+            }
+            case RIGHT -> {
+                if (!paused && piece != null) {
+                    piece.tryRight();
+                }
+            }
+            case UP -> {
+                if (!paused && piece != null) {
+                    piece.tryRotateCW();
+                    org.oosd.ui.Sound.playRotate();
+                }
+            }
+            case DOWN -> {
+                if (!paused && piece != null) {
+                    boolean moved = piece.softDropOrLock();
+                }
+            }
+            case P -> {
+                if (!gameOver) {
+                    paused = !paused;
+                    pauseOverlay.setVisible(paused);
+                }
+            }
             case ESCAPE -> { if (paused && onExitToMenu != null) onExitToMenu.run(); }
-            case R     -> { if (paused) restartGame(); }
+            case R -> { if (paused) restartGame(); }
             default -> {}
         }
     }
