@@ -20,9 +20,12 @@ public final class Sound {
         return SFX.computeIfAbsent(path, p -> {
             URL url = Sound.class.getResource(p);
             if (url == null) throw new IllegalArgumentException("Missing resource: " + p);
-            return new AudioClip(url.toExternalForm());
+            AudioClip clip = new AudioClip(url.toExternalForm());
+            clip.setVolume(1.0); // make sure SFX play loud enough over BGM
+            return clip;
         });
     }
+
 
 
     public static void playRotate()   { sfx("/audio/sfx_rotate.mp3").play(); }
