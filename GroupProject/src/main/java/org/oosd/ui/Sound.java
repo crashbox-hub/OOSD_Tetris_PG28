@@ -3,17 +3,16 @@ package org.oosd.ui;
 import javafx.scene.media.AudioClip;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
+import org.oosd.core.GameConfig;
 
 import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Simple one-stop helper for BGM + SFX. */
 public final class Sound {
-
     private Sound() {}
 
-    /* ---------- SFX (short sounds) ---------- */
+    /* ---------- SFX ---------- */
     private static final Map<String, AudioClip> SFX = new HashMap<>();
 
     private static AudioClip sfx(String path) {
@@ -21,22 +20,35 @@ public final class Sound {
             URL url = Sound.class.getResource(p);
             if (url == null) throw new IllegalArgumentException("Missing resource: " + p);
             AudioClip clip = new AudioClip(url.toExternalForm());
-            clip.setVolume(1.0); // make sure SFX play loud enough over BGM
+            clip.setVolume(1.0); // ensure full volume
             return clip;
         });
     }
 
+    public static void playRotate() {
+        if (GameConfig.get().isSfxEnabled()) sfx("/audio/sfx_rotate.mp3").play();
+    }
 
+    public static void playLine() {
+        if (GameConfig.get().isSfxEnabled()) sfx("/audio/sfx_line.mp3").play();
+    }
 
-    public static void playRotate()   { sfx("/audio/sfx_rotate.mp3").play(); }
-    public static void playLine()     { sfx("/audio/sfx_line.mp3").play(); }
-    public static void playGameOver() { sfx("/audio/sfx_gameover.wav").play(); }
+    public static void playGameOver() {
+        if (GameConfig.get().isSfxEnabled()) sfx("/audio/sfx_gameover.wav").play();
+    }
 
-    /* ---------- BGM (looping music) ---------- */
+    /* ---------- BGM ---------- */
     private static MediaPlayer bgm;
 
-    public static void startMenuBgm() { startBgm("/audio/bgm_menu.mp3", 0.35); }
-    public static void startGameBgm() { startBgm("/audio/bgm_game.mp3", 0.35); }
+    public static void startMenuBgm() {
+        if (!GameConfig.get().isMusicEnabled()) return;
+        startBgm("/audio/bgm_menu.mp3", 0.35);
+    }
+
+    public static void startGameBgm() {
+        if (!GameConfig.get().isMusicEnabled()) return;
+        startBgm("/audio/bgm_game.mp3", 0.35);
+    }
 
     public static void stopBgm() {
         if (bgm != null) {

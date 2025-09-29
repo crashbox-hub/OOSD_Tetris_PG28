@@ -9,16 +9,20 @@ public final class GameConfig {
     private int tileSize = 30;
 
     // Gravity (cells per second) – used by the active piece entity
-    private double gravityCps = 2.0;   // fall 2 rows per second (tune as you like)
+    private double gravityCps = 2.0;   // fall 2 rows per second
 
     // Piece spawn column (approx centre)
     private int spawnCol = 3;
+
+    // Global audio settings
+    private boolean musicEnabled = true;
+    private boolean sfxEnabled = true;   // <-- NEW
 
     private GameConfig() {}
 
     public static GameConfig get() { return INSTANCE; }
 
-    // getters/setters (expose only what the Config screen may change)
+    // getters/setters
     public int rows() { return rows; }
     public int cols() { return cols; }
     public int tileSize() { return tileSize; }
@@ -30,4 +34,12 @@ public final class GameConfig {
     public void setTileSize(int s){ tileSize = s; }
     public void setGravityCps(double g){ gravityCps = g; }
     public void setSpawnCol(int c){ spawnCol = c; }
+
+    // Music toggle
+    public boolean isMusicEnabled() { return musicEnabled; }
+    public void setMusicEnabled(boolean enabled) { musicEnabled = enabled; }
+
+    // SFX toggle
+    public boolean isSfxEnabled() { return sfxEnabled; }
+    public void setSfxEnabled(boolean enabled) { sfxEnabled = enabled; }
 }
