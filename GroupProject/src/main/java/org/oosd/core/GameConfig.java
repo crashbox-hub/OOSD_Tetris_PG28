@@ -7,13 +7,13 @@ public final class GameConfig {
 
     // Single-player board bounds
     public static final int MIN_COLS_1P = 6;
-    public static final int MAX_COLS_1P = 13;
+    public static final int MAX_COLS_1P = 25;
     public static final int MIN_ROWS_1P = 15;
     public static final int MAX_ROWS_1P = 20;
 
     // Two-player recommended bounds (kept a bit tighter so both boards are visible)
     public static final int MIN_COLS_2P = 6;
-    public static final int MAX_COLS_2P = 10;  // tighter than 1P to fit two boards
+    public static final int MAX_COLS_2P = 20;  // tighter than 1P to fit two boards
     public static final int MIN_ROWS_2P = 15;
     public static final int MAX_ROWS_2P = 20;
 

@@ -66,9 +66,9 @@ public class ConfigurationView extends AbstractScreen {
 
         int row = 0;
 
-        // --- Width 6..13 ---
+        // --- Width 6..30 ---
         Label widthLbl = label("Field Width (No of cells):");
-        Slider width = slider(6, 13, cfg.cols());
+        Slider width = slider(6, 25, cfg.cols());
         Label widthVal = valueLabel(width);
         width.valueProperty().addListener((obs, o, n) -> {
             int v = n.intValue();
