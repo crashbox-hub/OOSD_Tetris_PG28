@@ -14,6 +14,9 @@ public final class GameConfig {
     // Piece spawn column (approx centre)
     private int spawnCol = 3;
 
+    // === Person 4: AI toggle ===
+    private boolean aiEnabled = false;
+
     private GameConfig() {}
 
     public static GameConfig get() { return INSTANCE; }
@@ -30,4 +33,8 @@ public final class GameConfig {
     public void setTileSize(int s){ tileSize = s; }
     public void setGravityCps(double g){ gravityCps = g; }
     public void setSpawnCol(int c){ spawnCol = c; }
+
+    // === Person 4: AI toggle ===
+    public boolean aiEnabled() { return aiEnabled; }
+    public void setAiEnabled(boolean v) { aiEnabled = v; }
 }

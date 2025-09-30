@@ -65,7 +65,28 @@ public class ConfigurationView extends AbstractScreen {
         // Toggles
         row = addToggleRow(grid, row, "Music (On/Off):", true);
         row = addToggleRow(grid, row, "Sound Effect (On/Off):", true);
-        row = addToggleRow(grid, row, "AI Play (On/Off):", false);
+        {
+            Label lbl = label("AI Play (On/Off):");
+            CheckBox cb = new CheckBox();
+            cb.getStyleClass().add("config-checkbox");
+            cb.setSelected(false);
+
+            Label state = new Label("Off");
+            state.getStyleClass().add("state-off");
+            cb.selectedProperty().addListener((obs, was, isSel) -> {
+                state.setText(isSel ? "On" : "Off");
+                state.getStyleClass().removeAll("state-on", "state-off");
+                state.getStyleClass().add(isSel ? "state-on" : "state-off");
+                org.oosd.core.GameConfig.get().setAiEnabled(isSel);
+            });
+
+            grid.add(lbl, 0, row);
+            grid.add(cb, 1, row);
+            grid.add(state, 2, row);
+            GridPane.setHalignment(state, HPos.RIGHT);
+            row++;
+        }
+
         row = addToggleRow(grid, row, "Extend Mode (On/Off):", false);
 
         // Back button + footer

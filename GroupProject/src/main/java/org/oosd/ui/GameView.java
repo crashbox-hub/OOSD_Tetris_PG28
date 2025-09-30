@@ -77,12 +77,29 @@ public class GameView extends AbstractScreen {
     // queue a spawn to avoid modifying entities during iteration
     private boolean spawnQueued = false;
 
+    //AI
+    private boolean aiEnabled = false;
+    private long aiLastMoveNs = 0L;
+    private long aiLastDropNs = 0L;
+    private long aiLastRotateNs = 0L;
+    private static final long AI_MOVE_INTERVAL_NS   = 180_000_000L;   // ~0.18s
+    private static final long AI_DROP_INTERVAL_NS   = 350_000_000L;   // ~0.35s
+    private static final long AI_ROTATE_INTERVAL_NS = 2_000_000_000L; // ~2.0s
+
+    // remember last target to avoid camping one column
+    private int aiLastTargetCol = Board.COLS / 2;
+
+
+
     /* =========================
        Main loop (FPS independent)
        ========================= */
     private final AnimationTimer loop = new AnimationTimer() {
         @Override public void handle(long now) {
             if (!paused) {
+                //AI Control whilst enabled
+                if (aiEnabled) runAI(now);
+
                 // 1) advance entities
                 for (GameEntity e : entities) e.tick(now);
 
@@ -130,6 +147,8 @@ public class GameView extends AbstractScreen {
        ========================= */
     public GameView(Runnable onExitToMenu) {
         this.onExitToMenu = onExitToMenu;
+        this.aiEnabled = org.oosd.core.GameConfig.get().aiEnabled();
+
 
         // ----- HUD -----
         var hud = new VBox(16);
@@ -345,6 +364,84 @@ public class GameView extends AbstractScreen {
         }
     }
 
+    /*AI:
+     * - Choose the column with the lowest height (tie-break toward center and avoid repeating last target)
+     * - Move horizontally first; only soft-drop when aligned with target column
+     * - Rotate occasionally (optional)
+     */
+    private void runAI(long now) {
+        ActivePieceEntity piece = entities.stream()
+                .filter(ge -> ge.entityType() == EntityType.ACTIVE_PIECE)
+                .map(ge -> (ActivePieceEntity) ge)
+                .findFirst().orElse(null);
+        if (piece == null || gameOver) return;
+
+        int px = pieceCol(piece);            // <- uses helper below
+        int targetCol = chooseTargetColumn(); // <- uses helper below
+        aiLastTargetCol = targetCol;
+
+        // 1) horizontal movement (throttled)
+        if (now - aiLastMoveNs >= AI_MOVE_INTERVAL_NS) {
+            if (px < targetCol)      piece.tryRight();
+            else if (px > targetCol) piece.tryLeft();
+            aiLastMoveNs = now;
+        }
+
+        // 2) drop only when aligned to avoid piling in one spot
+        if (px == targetCol && (now - aiLastDropNs >= AI_DROP_INTERVAL_NS)) {
+            piece.softDropOrLock();
+            aiLastDropNs = now;
+        }
+
+        // 3) occasional rotate (optional, only when aligned)
+        if (px == targetCol && (now - aiLastRotateNs >= AI_ROTATE_INTERVAL_NS)) {
+            piece.tryRotateCW();
+            org.oosd.ui.Sound.playRotate();
+            aiLastRotateNs = now;
+        }
+    }
+
+    // Derive the piece's current column. If x() returns pixels, convert to cells using TILE.
+    private int pieceCol(ActivePieceEntity piece) {
+        double x = piece.x(); // if this is already in cells, great; if it's pixels, convert
+        if (x > Board.COLS + 2) x = x / TILE; // heuristic: big numbers are probably pixels
+        return (int) Math.round(x);
+    }
+
+    /** Pick the lowest column; tie-break toward center and avoid repeating last target. */
+    private int chooseTargetColumn() {
+        int[] heights = new int[Board.COLS];
+
+        // compute column heights
+        for (int c = 0; c < Board.COLS; c++) {
+            int h = 0;
+            for (int r = 0; r < Board.ROWS; r++) {
+                if (board.get(r, c) != 0) { h = Board.ROWS - r; break; }
+            }
+            heights[c] = h;
+        }
+
+        // find minimal height
+        int minH = Integer.MAX_VALUE;
+        for (int h : heights) minH = Math.min(minH, h);
+
+        // collect all columns with minimal height
+        java.util.List<Integer> candidates = new java.util.ArrayList<>();
+        for (int c = 0; c < Board.COLS; c++) if (heights[c] == minH) candidates.add(c);
+
+        // tie-break rule 1: prefer nearest to center
+        int center = Board.COLS / 2;
+        candidates.sort(java.util.Comparator.comparingInt(c -> Math.abs(c - center)));
+
+        // tie-break rule 2: avoid repeating the last target if possible
+        for (int c : candidates) if (c != aiLastTargetCol) return c;
+
+        // fallback: first candidate (closest to center)
+        return candidates.get(0);
+    }
+
+
+
     /* =========================
        Rendering of placed blocks
        ========================= */
@@ -548,3 +645,4 @@ public class GameView extends AbstractScreen {
         anim.play();
     }
 }
+
