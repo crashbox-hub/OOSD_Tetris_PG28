@@ -30,20 +30,19 @@ import java.util.*;
  * - Piece-aware spawn check (only game-over if the actual next piece cannot fit).
  * - Queue of next piece displayed in a 4x4 preview on the HUD.
  * - Flying message layer shows +N for 3s when lines are cleared.
+ * - Uses dynamic board size from GameConfig (no static Board.ROWS/COLS).
  */
 public class GameView extends AbstractScreen {
 
     /* =========================
        Config-derived sizing
        ========================= */
-    private final int TILE   = GameConfig.get().tileSize();
-    private final int BOARD_W = Board.COLS * TILE;
-    private final int BOARD_H = Board.ROWS * TILE;
+    private final int TILE = GameConfig.get().tileSize();
 
     /* =========================
        Core model
        ========================= */
-    private final Board board = new Board();
+    private final Board board = new Board();   // size comes from GameConfig
     private final Runnable onExitToMenu;
 
     // Entities/Sprites
@@ -76,6 +75,10 @@ public class GameView extends AbstractScreen {
 
     // queue a spawn to avoid modifying entities during iteration
     private boolean spawnQueued = false;
+
+    /* Convenience: board pixel size based on current board + TILE */
+    private int boardW() { return board.cols() * TILE; }
+    private int boardH() { return board.rows() * TILE; }
 
     /* =========================
        Main loop (FPS independent)
@@ -111,9 +114,10 @@ public class GameView extends AbstractScreen {
                         case 4 -> score += 800;
                         default -> score += cleared * 100;
                     }
-                    // play SFX and show flying “+N”
+                    // SFX (+ respects SFX toggle if Sound checks GameConfig)
                     org.oosd.ui.Sound.playLine();
-                    showFlyingMessage("+" + cleared, BOARD_W / 2.0 - TILE, BOARD_H / 2.0);
+                    // flying “+N” centered on current board size
+                    showFlyingMessage("+" + cleared, boardW() / 2.0 - TILE, boardH() / 2.0);
                 }
             }
 
@@ -165,9 +169,9 @@ public class GameView extends AbstractScreen {
         // Stack the board, fx messages, then add pause overlay as another child
         StackPane boardSurface = new StackPane(boardLayer, fxLayer);
         boardSurface.getStyleClass().add("board-surface");
-        boardSurface.setMinSize(BOARD_W, BOARD_H);
-        boardSurface.setPrefSize(BOARD_W, BOARD_H);
-        boardSurface.setMaxSize(BOARD_W, BOARD_H);
+        boardSurface.setMinSize(boardW(), boardH());
+        boardSurface.setPrefSize(boardW(), boardH());
+        boardSurface.setMaxSize(boardW(), boardH());
 
         // Pause / Game Over overlay
         pauseOverlay.setText("Game Paused (P)\nESC to Main Menu\nR to Restart Game");
@@ -215,6 +219,7 @@ public class GameView extends AbstractScreen {
         org.oosd.ui.Sound.startGameBgm();
         loop.start();
     }
+
     @Override public void onHide() {
         loop.stop();
         org.oosd.ui.Sound.stopBgm();
@@ -243,7 +248,7 @@ public class GameView extends AbstractScreen {
         // Clamp column for the piece width (rotation 0 used for spawn)
         int desiredCol = GameConfig.get().spawnCol();
         int width = pieceWidth(t, 0);
-        int col = Math.max(0, Math.min(desiredCol, Board.COLS - width));
+        int col = Math.max(0, Math.min(desiredCol, board.cols() - width));
 
         if (!canPlaceAt(t, 0, 0, col)) {
             triggerGameOver();
@@ -298,9 +303,9 @@ public class GameView extends AbstractScreen {
         paused = true;
         pauseOverlay.setText("Game Over\nESC to Main Menu\nR to Restart");
         pauseOverlay.setVisible(true);
-        org.oosd.ui.Sound.stopBgm(); org.oosd.ui.Sound.playGameOver(); // <-- add this
+        org.oosd.ui.Sound.stopBgm();
+        org.oosd.ui.Sound.playGameOver();
     }
-
 
     /* =========================
        Input handling
@@ -313,14 +318,10 @@ public class GameView extends AbstractScreen {
 
         switch (e.getCode()) {
             case LEFT -> {
-                if (!paused && piece != null) {
-                    piece.tryLeft();
-                }
+                if (!paused && piece != null) piece.tryLeft();
             }
             case RIGHT -> {
-                if (!paused && piece != null) {
-                    piece.tryRight();
-                }
+                if (!paused && piece != null) piece.tryRight();
             }
             case UP -> {
                 if (!paused && piece != null) {
@@ -331,6 +332,7 @@ public class GameView extends AbstractScreen {
             case DOWN -> {
                 if (!paused && piece != null) {
                     boolean moved = piece.softDropOrLock();
+                    // (optional SFX here if you have one)
                 }
             }
             case P -> {
@@ -354,8 +356,8 @@ public class GameView extends AbstractScreen {
         Group placed = new Group();
         placed.setUserData("placed");
 
-        for (int r = 0; r < Board.ROWS; r++) {
-            for (int c = 0; c < Board.COLS; c++) {
+        for (int r = 0; r < board.rows(); r++) {
+            for (int c = 0; c < board.cols(); c++) {
                 int v = board.get(r, c);
                 if (v != 0) {
                     Rectangle rect = new Rectangle(TILE, TILE);
@@ -375,8 +377,8 @@ public class GameView extends AbstractScreen {
             }
         }
 
-        if (boardLayer.getChildren().isEmpty() || boardLayer.getChildren().get(0) != gridLayer) {
-            boardLayer.getChildren().add(0, gridLayer);
+        if (boardLayer.getChildren().isEmpty() || boardLayer.getChildren().getFirst() != gridLayer) {
+            boardLayer.getChildren().addFirst(gridLayer);
         }
         boardLayer.getChildren().add(1, placed);
     }
@@ -410,8 +412,8 @@ public class GameView extends AbstractScreen {
     }
 
     private void restartGame() {
-        for (int r = 0; r < Board.ROWS; r++)
-            for (int c = 0; c < Board.COLS; c++)
+        for (int r = 0; r < board.rows(); r++)
+            for (int c = 0; c < board.cols(); c++)
                 board.set(r, c, 0);
 
         entities.clear();
@@ -452,7 +454,7 @@ public class GameView extends AbstractScreen {
             for (int c = 0; c < m[r].length; c++) {
                 if (m[r][c] != 0) {
                     int br = row + r, bc = col + c;
-                    if (br < 0 || br >= Board.ROWS || bc < 0 || bc >= Board.COLS) return false;
+                    if (br < 0 || br >= board.rows() || bc < 0 || bc >= board.cols()) return false;
                     if (board.get(br, bc) != 0) return false;
                 }
             }
@@ -503,13 +505,13 @@ public class GameView extends AbstractScreen {
     private void buildGrid(Group into) {
         into.getChildren().clear();
         Color gridColor = Color.color(1,1,1,0.10);
-        for (int x = 0; x <= Board.COLS; x++) {
-            var line = new javafx.scene.shape.Line(x * TILE, 0, x * TILE, BOARD_H);
+        for (int x = 0; x <= board.cols(); x++) {
+            var line = new javafx.scene.shape.Line(x * TILE, 0, x * TILE, boardH());
             line.setStroke(gridColor);
             into.getChildren().add(line);
         }
-        for (int y = 0; y <= Board.ROWS; y++) {
-            var line = new javafx.scene.shape.Line(0, y * TILE, BOARD_W, y * TILE);
+        for (int y = 0; y <= board.rows(); y++) {
+            var line = new javafx.scene.shape.Line(0, y * TILE, boardW(), y * TILE);
             line.setStroke(gridColor);
             into.getChildren().add(line);
         }
@@ -522,7 +524,6 @@ public class GameView extends AbstractScreen {
         Label msg = new Label(text);
         // color by number of lines for a tiny bit of flair
         Color fill = switch (text) {
-            case "+1" -> Color.LIMEGREEN;
             case "+2" -> Color.AQUA;
             case "+3" -> Color.ORCHID;
             case "+4" -> Color.GOLD;
