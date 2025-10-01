@@ -181,6 +181,8 @@ public class GameView extends AbstractScreen {
                 ? new HBox(16, buildSide(p1))
                 : new HBox(24, buildSide(p1), buildSide(p2));
         row.getStyleClass().add("game-row");
+        row.setAlignment(Pos.CENTER);
+
 
         // back button
         Button back = new Button("Back");
@@ -192,6 +194,8 @@ public class GameView extends AbstractScreen {
         StackPane frame = new StackPane(row);
         frame.getStyleClass().add("board-frame");
         frame.setPadding(new Insets(8));
+        StackPane.setAlignment(row, Pos.CENTER);
+
 
         root.getChildren().addAll(frame, backBar);
         getChildren().add(root);
