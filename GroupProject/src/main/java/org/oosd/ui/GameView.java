@@ -9,6 +9,7 @@ import javafx.scene.control.Label;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
@@ -25,35 +26,21 @@ import org.oosd.ui.sprites.SpriteFactory;
 
 import java.util.*;
 
-/**
- * GameView with 1|2 player support.
- * - 1P: original single-board UI.
- * - 2P: two boards side-by-side sharing a 7-bag piece sequence (players advance independently).
- * - Uses dynamic board size from GameConfig.
- */
+/* GameView with 1|2 player support, centered layout, and responsive scaling. */
 public class GameView extends AbstractScreen {
 
-    /* =========================
-       Config-derived sizing
-       ========================= */
+    /* Config-derived sizing */
     private final int TILE = GameConfig.get().tileSize();
 
-    /* =========================
-       Mode
-       ========================= */
+    /* Mode */
     private final int players;           // 1 or 2
     private final Runnable onExitToMenu;
 
-    /* =========================
-       Shared piece generator (7-bag)
-       ========================= */
+    /* Shared piece generator (7-bag) */
     private static final class PieceBag {
         private final Random rng = new Random(System.nanoTime());
         private final ArrayDeque<Tetromino> bag = new ArrayDeque<>(7);
-        synchronized Tetromino next() {
-            if (bag.isEmpty()) refill();
-            return bag.removeFirst();
-        }
+        synchronized Tetromino next() { if (bag.isEmpty()) refill(); return bag.removeFirst(); }
         private void refill() {
             List<Tetromino> list = new ArrayList<>(List.of(Tetromino.values()));
             Collections.shuffle(list, rng);
@@ -62,9 +49,7 @@ public class GameView extends AbstractScreen {
     }
     private final PieceBag pieceBag = new PieceBag();
 
-    /* =========================
-       Per-player container
-       ========================= */
+    /* Per-player container */
     private static final class Side {
         final int id; // 1 or 2
         final Board board = new Board();
@@ -86,6 +71,9 @@ public class GameView extends AbstractScreen {
         final StackPane nextBox = new StackPane();
         final Group     nextLayer = new Group();
 
+        // board node for scaling
+        StackPane boardSurface;
+
         // state
         Tetromino nextPiece = null;
         boolean paused = false;
@@ -95,53 +83,30 @@ public class GameView extends AbstractScreen {
         long runStartNanos = 0L;
         boolean spawnQueued = false;
 
-        // rng only used if single-player mode (kept for compatibility)
-        final Random rng = new Random();
-
         Side(int id) { this.id = id; }
     }
 
-    /* Single-player fields kept for compatibility (mapped to p1) */
-    private final Side p1 = new Side(1);
-    private final Side p2 = new Side(2);
+    /* Sides (1 or 2) */
+    private final List<Side> sides = new ArrayList<>(2);
 
     /* Convenience: board pixel size from GameConfig */
     private int boardW() { return GameConfig.get().cols() * TILE; }
     private int boardH() { return GameConfig.get().rows() * TILE; }
 
-    /* =========================
-       Loop
-       ========================= */
+    /* Loop */
     private final AnimationTimer loop = new AnimationTimer() {
         @Override public void handle(long now) {
-            if (players == 1) {
-                tickSide(p1, now);
-            } else {
-                tickSide(p1, now);
-                tickSide(p2, now);
-            }
+            for (Side s : sides) tickSide(s, now);
         }
     };
 
     private void tickSide(Side S, long now) {
         if (!S.paused) {
-            // 1) advance entities
             for (GameEntity e : S.entities) e.tick(now);
-
-            // 2) cleanup (defer spawn to after loop)
             removeDeadAndRespawn(S);
+            if (S.spawnQueued && !S.gameOver) { S.spawnQueued = false; spawnActivePiece(S); }
+            for (Sprite<?, ?> s : S.sprites) if (s instanceof PieceSprite ps) ps.syncToEntity();
 
-            // 3) perform deferred spawn (safe)
-            if (S.spawnQueued && !S.gameOver) {
-                S.spawnQueued = false;
-                spawnActivePiece(S);
-            }
-
-            // 4) sync piece sprites
-            for (Sprite<?, ?> s : S.sprites)
-                if (s instanceof PieceSprite ps) ps.syncToEntity();
-
-            // 5) clear rows + score + sfx/fx
             int cleared = S.board.clearFullRows();
             if (cleared > 0) {
                 S.lines += cleared;
@@ -156,71 +121,77 @@ public class GameView extends AbstractScreen {
                 showFlyingMessage(S, "+" + cleared, boardW() / 2.0 - TILE, boardH() / 2.0);
             }
         }
-
-        // 6) redraw placed + HUD
         drawPlacedBlocks(S);
         updateHud(S, now);
     }
 
-    /* =========================
-       ctor / layout
-       ========================= */
+    /* ctor / layout */
     public GameView(Runnable onExitToMenu) {
-        this(onExitToMenu, org.oosd.core.GameConfig.get().players());
+        this(onExitToMenu, GameConfig.get().players());
     }
+
     public GameView(Runnable onExitToMenu, int players) {
         this.onExitToMenu = onExitToMenu;
         this.players = (players == 2 ? 2 : 1);
 
-        // build UI
-        VBox root = new VBox(12);
-        root.getStyleClass().add("app-bg");
-        root.setFillWidth(false);
+        // ----- OUTER ROOT (this) -----
+        // This class extends StackPane, so style it and let it fill the window.
+        getStyleClass().add("app-bg");
+        setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
 
-        HBox row = (this.players == 1)
-                ? new HBox(16, buildSide(p1))
-                : new HBox(24, buildSide(p1), buildSide(p2));
+        // Build 1 or 2 sides
+        sides.add(new Side(1));
+        if (this.players == 2) sides.add(new Side(2));
+
+        // Row of boards (centered)
+        HBox row = new HBox(this.players == 1 ? 16 : 24);
         row.getStyleClass().add("game-row");
         row.setAlignment(Pos.CENTER);
+        for (Side s : sides) row.getChildren().add(buildSide(s));
 
-
-        // back button
+        // Back button bar (centered)
         Button back = new Button("Back");
         back.getStyleClass().addAll("btn", "btn-ghost");
         back.setOnAction(e -> { if (onExitToMenu != null) onExitToMenu.run(); });
         HBox backBar = new HBox(back);
         backBar.getStyleClass().add("center-bar");
+        backBar.setAlignment(Pos.CENTER);
 
+        // Frame around boards (don’t stretch; keep preferred size)
         StackPane frame = new StackPane(row);
         frame.getStyleClass().add("board-frame");
         frame.setPadding(new Insets(8));
         StackPane.setAlignment(row, Pos.CENTER);
+        frame.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
 
+        // Compact content (frame + back). Keep it non-stretching.
+        VBox content = new VBox(12, frame, backBar);
+        content.setAlignment(Pos.CENTER);
+        content.setFillWidth(false);
+        content.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
 
-        root.getChildren().addAll(frame, backBar);
-        getChildren().add(root);
+        // Put content into *this* StackPane and center it.
+        getChildren().setAll(content);
+        StackPane.setAlignment(content, Pos.CENTER);
 
+        // Keyboard focus
         setFocusTraversable(true);
         setOnKeyPressed(this::onKey);
 
-        // Prime each side
-        if (this.players == 1) {
-            p1.nextPiece = pieceBag.next();
-            spawnActivePiece(p1);
-            drawNextPreview(p1);
-        } else {
-            p1.nextPiece = pieceBag.next();
-            spawnActivePiece(p1);
-            drawNextPreview(p1);
-
-            p2.nextPiece = pieceBag.next();
-            spawnActivePiece(p2);
-            drawNextPreview(p2);
+        // Prime sides with shared 7-bag
+        for (Side s : sides) {
+            s.nextPiece = pieceBag.next();
+            spawnActivePiece(s);
+            drawNextPreview(s);
         }
+
+        // Scale when THIS node resizes (works regardless of scene/root)
+        widthProperty().addListener((o, ov, nv) -> applyScaling());
+        heightProperty().addListener((o, ov, nv) -> applyScaling());
+        applyScaling();
     }
 
     private VBox buildSide(Side S) {
-        // HUD
         Label nextTitle = new Label((players == 2 ? ("PLAYER " + S.id + " — ") : "") + "NEXT");
         nextTitle.getStyleClass().add("hud-title");
 
@@ -236,42 +207,61 @@ public class GameView extends AbstractScreen {
                         "-fx-border-radius: 6;"
         );
 
-        for (Label lbl : new Label[]{S.scoreLabel, S.linesLabel, S.timeLabel}) {
+        for (Label lbl : new Label[]{S.scoreLabel, S.linesLabel, S.timeLabel})
             lbl.getStyleClass().add("hud-label");
-        }
-        VBox hud = new VBox(16, nextTitle, S.nextBox, S.scoreLabel, S.linesLabel, S.timeLabel);
-        hud.setAlignment(Pos.TOP_LEFT);
 
-        // grid bottom-most
+        VBox hud = new VBox(12, nextTitle, S.nextBox, S.scoreLabel, S.linesLabel, S.timeLabel);
+        hud.setAlignment(Pos.CENTER);
+
         buildGrid(S.gridLayer);
         S.boardLayer.getChildren().add(S.gridLayer);
 
-        // board + fx + overlay
-        StackPane boardSurface = new StackPane(S.boardLayer, S.fxLayer);
-        boardSurface.getStyleClass().add("board-surface");
-        boardSurface.setMinSize(boardW(), boardH());
-        boardSurface.setPrefSize(boardW(), boardH());
-        boardSurface.setMaxSize(boardW(), boardH());
+        S.boardSurface = new StackPane(S.boardLayer, S.fxLayer);
+        S.boardSurface.getStyleClass().add("board-surface");
+        S.boardSurface.setMinSize(boardW(), boardH());
+        S.boardSurface.setPrefSize(boardW(), boardH());
+        S.boardSurface.setMaxSize(boardW(), boardH());
 
         S.pauseOverlay.setText("Game Paused (" + (S.id == 1 ? "P" : "L") + ")\nESC to Main Menu\nR to Restart");
         S.pauseOverlay.setTextFill(Color.WHITE);
         S.pauseOverlay.setFont(Font.font("Arial", FontWeight.BOLD, 20));
         S.pauseOverlay.setVisible(false);
-        boardSurface.getChildren().add(S.pauseOverlay);
+        S.boardSurface.getChildren().add(S.pauseOverlay);
         StackPane.setAlignment(S.pauseOverlay, Pos.CENTER);
 
-        return new VBox(10, boardSurface, hud);
+        VBox sideBox = new VBox(10, S.boardSurface, hud);
+        sideBox.setAlignment(Pos.CENTER);
+        return sideBox;
     }
 
-    /* =========================
-       Lifecycle
-       ========================= */
+    /* Scaling / Centering */
+    private void applyScaling() {
+        double containerW = Math.max(1, getWidth());
+        double containerH = Math.max(1, getHeight());
+
+        double gap = (players == 1 ? 16 : 24);
+        double totalBoardsW = players == 1 ? boardW() : (boardW() * 2 + gap);
+        double totalBoardsH = boardH() + 160; // board + rough HUD
+
+        double scaleX = (containerW * 0.92) / totalBoardsW; // margin
+        double scaleY = (containerH * 0.90) / totalBoardsH; // margin
+
+        double s = Math.min(1.0, Math.min(scaleX, scaleY));
+        if (s <= 0) s = 1.0;
+
+        for (Side side : sides) {
+            if (side.boardSurface != null) {
+                side.boardSurface.setScaleX(s);
+                side.boardSurface.setScaleY(s);
+            }
+        }
+    }
+
+    /* Lifecycle */
     @Override public void onShow() {
         requestFocus();
         long now = System.nanoTime();
-        p1.runStartNanos = now;
-        if (players == 2) p2.runStartNanos = now;
-
+        for (Side s : sides) s.runStartNanos = now;
         if (GameConfig.get().isMusicEnabled()) Sound.startGameBgm();
         loop.start();
     }
@@ -281,9 +271,7 @@ public class GameView extends AbstractScreen {
         Sound.stopBgm();
     }
 
-    /* =========================
-       Spawning / removal
-       ========================= */
+    /* Spawning / removal */
     private void spawnActivePiece(Side S) {
         if (S.gameOver) return;
         if (S.nextPiece == null) S.nextPiece = pieceBag.next();
@@ -301,7 +289,6 @@ public class GameView extends AbstractScreen {
         ActivePieceEntity piece = new ActivePieceEntity(S.board, t, col);
         addEntityWithSprite(S, piece);
 
-        // roll next from shared bag
         S.nextPiece = pieceBag.next();
         drawNextPreview(S);
     }
@@ -343,28 +330,34 @@ public class GameView extends AbstractScreen {
         if (GameConfig.get().isSfxEnabled()) Sound.playGameOver();
     }
 
-    /* =========================
-       Input handling
-       ========================= */
+    /* Input handling */
     private void onKey(KeyEvent e) {
         if (players == 1) {
-            handleControls(p1, e.getCode(), KeyCode.LEFT, KeyCode.RIGHT, KeyCode.UP, KeyCode.DOWN);
-            if (e.getCode() == KeyCode.P && !p1.gameOver) { p1.paused = !p1.paused; p1.pauseOverlay.setVisible(p1.paused); }
-            if (e.getCode() == KeyCode.ESCAPE && p1.paused && onExitToMenu != null) onExitToMenu.run();
-            if (e.getCode() == KeyCode.R && p1.paused) restartSide(p1);
+            Side s = sides.getFirst();
+            handleControls(s, e.getCode(), KeyCode.LEFT, KeyCode.RIGHT, KeyCode.UP, KeyCode.DOWN);
+            if (e.getCode() == KeyCode.P && !s.gameOver) togglePause(s);
+            if (e.getCode() == KeyCode.ESCAPE && s.paused && onExitToMenu != null) onExitToMenu.run();
+            if (e.getCode() == KeyCode.R && s.paused) restartSide(s);
             return;
         }
 
-        // 2P
-        handleControls(p1, e.getCode(), KeyCode.LEFT, KeyCode.RIGHT, KeyCode.UP, KeyCode.DOWN);
-        handleControls(p2, e.getCode(), KeyCode.A,    KeyCode.D,     KeyCode.W,  KeyCode.S);
+        Side s1 = sides.get(0);
+        Side s2 = sides.get(1);
 
-        if (e.getCode() == KeyCode.P && !p1.gameOver) { p1.paused = !p1.paused; p1.pauseOverlay.setVisible(p1.paused); }
-        if (e.getCode() == KeyCode.L && !p2.gameOver) { p2.paused = !p2.paused; p2.pauseOverlay.setVisible(p2.paused); }
+        handleControls(s1, e.getCode(), KeyCode.LEFT, KeyCode.RIGHT, KeyCode.UP, KeyCode.DOWN);
+        handleControls(s2, e.getCode(), KeyCode.A,    KeyCode.D,     KeyCode.W,  KeyCode.S);
 
-        boolean anyPaused = p1.paused || p2.paused;
+        if (e.getCode() == KeyCode.P && !s1.gameOver) togglePause(s1);
+        if (e.getCode() == KeyCode.L && !s2.gameOver) togglePause(s2);
+
+        boolean anyPaused = s1.paused || s2.paused;
         if (e.getCode() == KeyCode.ESCAPE && anyPaused && onExitToMenu != null) onExitToMenu.run();
-        if (e.getCode() == KeyCode.R && anyPaused) { restartSide(p1); restartSide(p2); }
+        if (e.getCode() == KeyCode.R && anyPaused) { restartSide(s1); restartSide(s2); }
+    }
+
+    private void togglePause(Side s) {
+        s.paused = !s.paused;
+        s.pauseOverlay.setVisible(s.paused);
     }
 
     private void handleControls(Side S, KeyCode code,
@@ -382,9 +375,7 @@ public class GameView extends AbstractScreen {
         else if (code == down) piece.softDropOrLock();
     }
 
-    /* =========================
-       Rendering / HUD
-       ========================= */
+    /* Rendering / HUD */
     private void drawPlacedBlocks(Side S) {
         S.boardLayer.getChildren().removeIf(n -> "placed".equals(n.getUserData()));
 
@@ -472,17 +463,15 @@ public class GameView extends AbstractScreen {
 
         S.runStartNanos = System.nanoTime();
 
-        // keep bag shared, just new "next" then spawn
         S.nextPiece = pieceBag.next();
         spawnActivePiece(S);
         drawNextPreview(S);
 
         requestFocus();
+        applyScaling();
     }
 
-    /* =========================
-       Helpers
-       ========================= */
+    /* Helpers */
     private int pieceWidth(Tetromino t, int rot) {
         int[][] m = t.shape(rot);
         return (m.length == 0) ? 0 : m[0].length;
@@ -544,13 +533,13 @@ public class GameView extends AbstractScreen {
 
     private Color colorFor(int id) {
         return switch (id) {
-            case 1 -> Color.CYAN;       // I
-            case 2 -> Color.YELLOW;     // O
-            case 3 -> Color.PURPLE;     // T
-            case 4 -> Color.LIMEGREEN;  // S
-            case 5 -> Color.RED;        // Z
-            case 6 -> Color.BLUE;       // J
-            case 7 -> Color.ORANGE;     // L
+            case 1 -> Color.CYAN;
+            case 2 -> Color.YELLOW;
+            case 3 -> Color.PURPLE;
+            case 4 -> Color.LIMEGREEN;
+            case 5 -> Color.RED;
+            case 6 -> Color.BLUE;
+            case 7 -> Color.ORANGE;
             default -> Color.GRAY;
         };
     }
