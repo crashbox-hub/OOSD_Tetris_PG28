@@ -86,16 +86,26 @@ public class GameView extends AbstractScreen {
         long runStartNanos = 0L;
         boolean spawnQueued = false;
 
-        // NEW: per-side AI enable (copied from GameConfig on construction)
+        // per-side AI enable (copied from GameConfig on construction)
         boolean ai = false;
 
-        // NEW: simple AI timers/state per side
+        // AI timers/state per side
         long aiLastMoveNs = 0L;
         long aiLastDropNs = 0L;
         long aiLastRotateNs = 0L;
         int  aiLastTargetCol = 5;
 
+        // Grav and input clocks
+        long lastGravityNs = 0L;
+        long lastHorizNs   = 0L;
+
         Side(int id) { this.id = id; }
+    }
+
+    // Return the gravity step interval (nanoseconds) based on cells-per-second. // NEW
+    private long gravityIntervalNs() {
+        double cps = Math.max(0.1, GameConfig.get().gravityCps());
+        return (long) (1_000_000_000L / cps);
     }
 
     /* Sides (1 or 2) */
@@ -109,8 +119,9 @@ public class GameView extends AbstractScreen {
     private final AnimationTimer loop = new AnimationTimer() {
         @Override public void handle(long now) {
             for (Side s : sides) {
-                // NEW: drive AI before tick when active, unpaused, not game over
-                if (s.ai && !s.paused && !s.gameOver) runAI(s, now);  // NEW
+                //  drive AI before tick when active, unpaused, not game over
+                if (s.ai && !s.paused && !s.gameOver) runAI(s, now);
+                enforceGravity(s, now);
                 tickSide(s, now);
             }
         }
@@ -275,7 +286,10 @@ public class GameView extends AbstractScreen {
     @Override public void onShow() {
         requestFocus();
         long now = System.nanoTime();
-        for (Side s : sides) s.runStartNanos = now;
+        for (Side s : sides) {
+            s.runStartNanos = now;
+            s.lastGravityNs = now;
+        }
         if (GameConfig.get().isMusicEnabled()) Sound.startGameBgm();
         loop.start();
     }
@@ -304,6 +318,7 @@ public class GameView extends AbstractScreen {
         addEntityWithSprite(S, piece);
 
         S.nextPiece = pieceBag.next();
+        S.lastGravityNs = System.nanoTime();
         drawNextPreview(S);
     }
 
@@ -446,7 +461,7 @@ public class GameView extends AbstractScreen {
 
     /* ----------  simple AI driver per side ---------- */
 
-    // Simple tempo values tuned for a casual bot
+    // Simple tempo values tuned for  bot
     private static final long AI_MOVE_INTERVAL_NS   = 180_000_000L;   // ~0.18s
     private static final long AI_DROP_INTERVAL_NS   = 350_000_000L;   // ~0.35s
     private static final long AI_ROTATE_INTERVAL_NS = 2_000_000_000L; // ~2.0s
@@ -599,6 +614,7 @@ public class GameView extends AbstractScreen {
         S.pauseOverlay.setVisible(false);
 
         S.runStartNanos = System.nanoTime();
+        S.lastGravityNs = S.runStartNanos;
 
         S.nextPiece = pieceBag.next();
         spawnActivePiece(S);
@@ -667,6 +683,25 @@ public class GameView extends AbstractScreen {
         anim.setOnFinished(e -> S.fxLayer.getChildren().remove(msg));
         anim.play();
     }
+
+    // Force a down step or lock at fixed wall-clock intervals.                     // NEW
+    private void enforceGravity(Side S, long now) {
+        if (S.paused || S.gameOver) return;
+        if (now - S.lastGravityNs < gravityIntervalNs()) return;
+
+        ActivePieceEntity piece = S.entities.stream()
+                .filter(ge -> ge.entityType() == EntityType.ACTIVE_PIECE)
+                .map(ge -> (ActivePieceEntity) ge)
+                .findFirst().orElse(null);
+        if (piece == null) return;
+
+        piece.softDropOrLock();
+        S.lastGravityNs = now;
+    }
+
+
+
+
 
     private Color colorFor(int id) {
         return switch (id) {
