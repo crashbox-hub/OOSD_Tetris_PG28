@@ -7,7 +7,6 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
-import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import org.oosd.core.AbstractScreen;
@@ -95,11 +94,14 @@ public class MainMenuView extends AbstractScreen {
 
         // Make sure highscores.json exists so it shows up in the folder immediately.
         org.oosd.core.HighScoreStore.initIfMissing();
+        // Re-load persisted settings so we honor the last saved choice
+        GameConfig cfg = GameConfig.get();
+        SettingsStore.loadInto(cfg);
 
-        if (org.oosd.core.GameConfig.get().isMusicEnabled()) {
-            org.oosd.ui.Sound.startMenuBgm();
+        if (cfg.isMusicEnabled()) {
+            Sound.startMenuBgm();
         } else {
-            org.oosd.ui.Sound.stopBgm();
+            Sound.stopBgm();
         }
     }
 

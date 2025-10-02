@@ -69,7 +69,7 @@ public class HighScoresView extends AbstractScreen {
             int rank = 1;
             for (HighScoreStore.Entry e : scores) {
                 // Format: "1) AAA - 12000"
-                list.getItems().add(rank++ + ") " + e.name + " - " + e.score);
+                list.getItems().add(rank++ + ") " + e.name() + " - " + e.score());
             }
         }
 

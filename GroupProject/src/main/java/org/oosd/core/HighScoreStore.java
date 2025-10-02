@@ -36,11 +36,10 @@ public final class HighScoreStore {
         }
     }
 
-    /** Represents a single entry */
-    public static class Entry {
-        public final String name;
-        public final int score;
-        public Entry(String name, int score) { this.name = name; this.score = score; }
+    /**
+     * Represents a single entry
+     */
+        public record Entry(String name, int score) {
     }
 
     /** Load high scores (sorted descending). */
@@ -73,10 +72,14 @@ public final class HighScoreStore {
 
     /** Add a new score (auto-loads, inserts, saves). */
     public static void addScore(String name, int score) {
+        // Prevent adding 0 or negative scores
+        if (score <= 0) return;
+
         List<Entry> scores = load();
         scores.add(new Entry(name, score));
         save(scores);
     }
+
 
     /* ---------- JSON helpers ---------- */
 

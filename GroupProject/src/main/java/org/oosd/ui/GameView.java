@@ -26,9 +26,6 @@ import org.oosd.ui.sprites.PieceSprite;
 import org.oosd.ui.sprites.Sprite;
 import org.oosd.ui.sprites.SpriteFactory;
 
-import javafx.application.Platform;
-
-
 import java.util.*;
 
 public class GameView extends AbstractScreen {
@@ -82,7 +79,7 @@ public class GameView extends AbstractScreen {
         Tetromino nextPiece = null;
         boolean paused = false;
         boolean gameOver = false;
-        boolean scoreSaved = false;   // <-- prevent multiple prompts
+        boolean scoreSaved = false;   // prevent multiple prompts
         int score = 0;
         int lines = 0;
         long runStartNanos = 0L;
@@ -322,73 +319,47 @@ public class GameView extends AbstractScreen {
         S.pauseOverlay.setText("Game Over\nESC to Main Menu\nR to Restart");
         S.pauseOverlay.setVisible(true);
         if (GameConfig.get().isSfxEnabled()) Sound.playGameOver();
+    }
 
-        // Stop the loop once any side is game over to avoid re-entrancy.
+    /*  High scores: defer prompting until exit  */
+    /** Returns true if the given score would appear in the top-10. */
+    private boolean qualifiesForHighScore(int score) {
+        // Prevent 0 from ever qualifying
+        if (score <= 0) return false;
+
+        var list = HighScoreStore.load(); // sorted desc as per our store
+        if (list.size() < 10) return true;
+        int lastScore = list.getLast().score();
+        return score > lastScore;
+    }
+
+
+    /** Run prompts sequentially for all qualifying sides, then exit to menu. */
+    private void handleHighScoresAndExit() {
+        // stop animation while dialogs are shown
         loop.stop();
 
-        // Queue high score prompt safely (next pulse).
-        queueHighScorePrompt(S);
+        for (Side s : sides) {
+            if (!s.scoreSaved && qualifiesForHighScore(s.score)) {
+                promptHighScore(s);
+            }
+        }
+        if (onExitToMenu != null) onExitToMenu.run();
     }
 
-    /** Schedule a safe, non-blocking high-score prompt. */
-    private void queueHighScorePrompt(Side S) {
-        if (S.scoreSaved) return;                 // already handled
-        if (!qualifiesForHighScore(S.score)) return;
-
-        Platform.runLater(() -> {
-            if (S.scoreSaved) return;             // double-check after defer
-
-            TextInputDialog dlg = new TextInputDialog();
-            dlg.setTitle("New High Score!");
-            dlg.setHeaderText("Player " + S.id + " scored " + S.score + " points.\n"
-                    + "Enter a name (max 5 letters/numbers):");
-            dlg.setContentText("Name:");
-
-            // live sanitize: A–Z / 0–9, max 5, uppercase
-            var tf = dlg.getEditor();
-            tf.setPromptText("AAA");
-            tf.textProperty().addListener((obs, oldV, newV) -> {
-                String cleaned = (newV == null ? "" : newV.replaceAll("[^A-Za-z0-9]", ""))
-                        .toUpperCase(Locale.ROOT);
-                if (cleaned.length() > 5) cleaned = cleaned.substring(0, 5);
-                if (!cleaned.equals(newV)) tf.setText(cleaned);
-            });
-
-            // Save on close (OK or close with text)
-            dlg.setOnHidden(ev -> {
-                String name = tf.getText();
-                if (name == null) name = "";
-                name = name.replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
-                if (name.isEmpty()) name = "PLAYER";
-                if (name.length() > 5) name = name.substring(0, 5);
-                HighScoreStore.addScore(name, S.score);
-                S.scoreSaved = true;
-            });
-
-            dlg.show(); // non-blocking, safe during/after animations
-        });
-    }
-
-
-    /* High score prompt + save */
-    private void maybePromptHighScore(Side S) {
-        if (S.scoreSaved) return; // already handled
-        boolean qualifies = qualifiesForHighScore(S.score);
-        if (!qualifies) return;
-
-        // Build dialog
+    /** Blocking prompt used only on exit (safe: loop stopped). */
+    private void promptHighScore(Side S) {
         TextInputDialog dlg = new TextInputDialog();
         dlg.setTitle("New High Score!");
         dlg.setHeaderText("Player " + S.id + " scored " + S.score + " points.\n" +
                 "Enter a name (max 5 letters/numbers):");
         dlg.setContentText("Name:");
 
-        // Enforce uppercase A-Z / 0-9 and max length 5 (live)
         var tf = dlg.getEditor();
         tf.setPromptText("AAA");
         tf.textProperty().addListener((obs, oldV, newV) -> {
-            String cleaned = newV == null ? "" : newV.replaceAll("[^A-Za-z0-9]", "");
-            cleaned = cleaned.toUpperCase(Locale.ROOT);
+            String cleaned = (newV == null ? "" : newV.replaceAll("[^A-Za-z0-9]", ""))
+                    .toUpperCase(Locale.ROOT);
             if (cleaned.length() > 5) cleaned = cleaned.substring(0, 5);
             if (!cleaned.equals(newV)) tf.setText(cleaned);
         });
@@ -398,16 +369,9 @@ public class GameView extends AbstractScreen {
             String name = result.get().trim().replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
             if (name.isEmpty()) name = "PLAYER";
             if (name.length() > 5) name = name.substring(0, 5);
-            HighScoreStore.addScore(name, S.score); // will sort & persist top 10
+            HighScoreStore.addScore(name, S.score);
             S.scoreSaved = true;
         }
-    }
-
-    private boolean qualifiesForHighScore(int score) {
-        var list = HighScoreStore.load(); // sorted desc as per our store
-        if (list.size() < 10) return true;
-        int lastScore = list.getLast().score;
-        return score > lastScore;
     }
 
     /* Input handling */
@@ -416,7 +380,9 @@ public class GameView extends AbstractScreen {
             Side s = sides.getFirst();
             handleControls(s, e.getCode(), KeyCode.LEFT, KeyCode.RIGHT, KeyCode.UP, KeyCode.DOWN);
             if (e.getCode() == KeyCode.P && !s.gameOver) togglePause(s);
-            if (e.getCode() == KeyCode.ESCAPE && s.paused && onExitToMenu != null) onExitToMenu.run();
+            if (e.getCode() == KeyCode.ESCAPE && s.paused) {
+                handleHighScoresAndExit();
+            }
             if (e.getCode() == KeyCode.R && s.paused) restartSide(s);
             return;
         }
@@ -431,7 +397,9 @@ public class GameView extends AbstractScreen {
         if (e.getCode() == KeyCode.L && !s2.gameOver) togglePause(s2);
 
         boolean anyPaused = s1.paused || s2.paused;
-        if (e.getCode() == KeyCode.ESCAPE && anyPaused && onExitToMenu != null) onExitToMenu.run();
+        if (e.getCode() == KeyCode.ESCAPE && anyPaused) {
+            handleHighScoresAndExit();
+        }
         if (e.getCode() == KeyCode.R && anyPaused) { restartSide(s1); restartSide(s2); }
     }
 
