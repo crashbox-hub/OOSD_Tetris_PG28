@@ -18,14 +18,15 @@ public final class GameConfig {
     public static final int MAX_ROWS_2P = 20;
 
     // Defaults
-    private static final int  DEF_ROWS     = 20;
-    private static final int  DEF_COLS     = 10;
-    private static final int  DEF_TILE     = 30;
-    private static final double DEF_GRAV_CPS = 2.0;
-    private static final int  DEF_SPAWN_COL = 3;
-    private static final boolean DEF_MUSIC  = true;
-    private static final boolean DEF_SFX    = true;
-    private static final int  DEF_PLAYERS   = 1; // 1 or 2
+    private static final int    DEF_ROWS      = 20;
+    private static final int    DEF_COLS      = 10;
+    private static final int    DEF_TILE      = 30;
+    private static final double DEF_GRAV_CPS  = 2.0;
+    private static final int    DEF_SPAWN_COL = 3;
+    private static final boolean DEF_MUSIC    = true;
+    private static final boolean DEF_SFX      = true;
+    private static final int    DEF_PLAYERS   = 1;     // 1 or 2
+    private static final boolean DEF_AI       = false; // new
 
     /* ---------------- Instance state ---------------- */
 
@@ -47,19 +48,23 @@ public final class GameConfig {
     // Players (1 or 2)
     private int players = DEF_PLAYERS;
 
+    // AI toggle (merged from branch)
+    private boolean aiEnabled = DEF_AI;
+
     private GameConfig() { }
 
     public static GameConfig get() { return INSTANCE; }
 
     /* ---------------- Getters ---------------- */
-    public int rows()            { return rows; }
-    public int cols()            { return cols; }
-    public int tileSize()        { return tileSize; }
-    public double gravityCps()   { return gravityCps; }
-    public int spawnCol()        { return spawnCol; }
-    public boolean isMusicEnabled() { return musicEnabled; }
-    public boolean isSfxEnabled()   { return sfxEnabled; }
-    public int players()         { return players; }
+    public int rows()                 { return rows; }
+    public int cols()                 { return cols; }
+    public int tileSize()             { return tileSize; }
+    public double gravityCps()        { return gravityCps; }
+    public int spawnCol()             { return spawnCol; }
+    public boolean isMusicEnabled()   { return musicEnabled; }
+    public boolean isSfxEnabled()     { return sfxEnabled; }
+    public int players()              { return players; }
+    public boolean isAiEnabled()      { return aiEnabled; }  // new
 
     /* ---------------- Setters (with clamping) ---------------- */
 
@@ -73,12 +78,12 @@ public final class GameConfig {
         spawnCol = clamp(spawnCol, 0, Math.max(0, cols - 1));
     }
 
-    public void setTileSize(int s) { tileSize = Math.max(8, s); } // protect against tiny sizes
-    public void setGravityCps(double g) { gravityCps = Math.max(0.1, g); }
-    public void setSpawnCol(int c) { spawnCol = clamp(c, 0, Math.max(0, cols - 1)); }
+    public void setTileSize(int s)         { tileSize = Math.max(8, s); }      // protect against tiny sizes
+    public void setGravityCps(double g)    { gravityCps = Math.max(0.1, g); }
+    public void setSpawnCol(int c)         { spawnCol = clamp(c, 0, Math.max(0, cols - 1)); }
 
-    public void setMusicEnabled(boolean enabled) { musicEnabled = enabled; }
-    public void setSfxEnabled(boolean enabled)   { sfxEnabled = enabled; }
+    public void setMusicEnabled(boolean b) { musicEnabled = b; }
+    public void setSfxEnabled(boolean b)   { sfxEnabled = b; }
 
     /** Only 1 or 2 allowed; also re-clamps board for the chosen mode. */
     public void setPlayers(int p) {
@@ -87,6 +92,11 @@ public final class GameConfig {
         rows = clamp(rows, currentMinRows(), currentMaxRows());
         cols = clamp(cols, currentMinCols(), currentMaxCols());
         spawnCol = clamp(spawnCol, 0, Math.max(0, cols - 1));
+    }
+
+    /** Enable/disable AI play (merged). */
+    public void setAiEnabled(boolean enabled) {
+        aiEnabled = enabled;
     }
 
     /* ---------------- Helpers ---------------- */

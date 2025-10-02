@@ -74,20 +74,16 @@ public class ConfigurationView extends AbstractScreen {
 
         // --- Game Level (maps to gravityCps) ---
         Label levelLbl = label("Game Level:");
-        int levelInitial = levelFromGravity(cfg.gravityCps()); // <-- derive from saved gravity
+        int levelInitial = levelFromGravity(cfg.gravityCps()); // derive from saved gravity
         Slider level = slider(1, 10, levelInitial);
         Label levelVal = valueLabel(level);
-
         level.valueProperty().addListener((obs, o, n) -> {
             int v = n.intValue();
-            double cps = gravityFromLevel(v);
-            cfg.setGravityCps(cps);
+            cfg.setGravityCps(gravityFromLevel(v));
             SettingsStore.save(cfg);
         });
-
         HBox levelBox = new HBox(10, level);
         levelBox.setAlignment(Pos.CENTER_LEFT);
-
         grid.add(levelLbl, 0, row); grid.add(levelBox, 1, row);
         grid.add(levelVal, 2, row++); GridPane.setHalignment(levelVal, HPos.RIGHT);
 
@@ -129,8 +125,13 @@ public class ConfigurationView extends AbstractScreen {
             SettingsStore.save(cfg);
         });
 
-        // (Placeholders)
-        row = addToggleRow(grid, row, "AI Play (On/Off):", false, isSel -> {});
+        // --- AI Play toggle (merged from branch) ---
+        row = addToggleRow(grid, row, "AI Play (On/Off):", cfg.isAiEnabled(), isSel -> {
+            cfg.setAiEnabled(isSel);
+            SettingsStore.save(cfg); // persists if SettingsStore handles aiEnabled
+        });
+
+        // Placeholder
         row = addToggleRow(grid, row, "Extend Mode (On/Off):", false, isSel -> {});
 
         // Back button + footer
@@ -207,6 +208,7 @@ public class ConfigurationView extends AbstractScreen {
         int lvl = Math.max(1, Math.min(10, level));
         return 1.8 + 0.25 * (lvl - 1);
     }
+
     private static int levelFromGravity(double cps) {
         // invert mapping and clamp to 1..10
         int lvl = (int)Math.round(((cps - 1.8) / 0.25) + 1.0);

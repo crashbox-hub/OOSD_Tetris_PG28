@@ -37,6 +37,9 @@ public class GameView extends AbstractScreen {
     private final int players;           // 1 or 2
     private final Runnable onExitToMenu;
 
+    /* AI toggle (from config) */
+    private final boolean aiEnabled = GameConfig.get().isAiEnabled();
+
     /* Shared piece generator (7-bag) */
     private static final class PieceBag {
         private final Random rng = new Random(System.nanoTime());
@@ -85,8 +88,20 @@ public class GameView extends AbstractScreen {
         long runStartNanos = 0L;
         boolean spawnQueued = false;
 
+        // AI timing (per-side)
+        long aiLastMoveNs = 0L;
+        long aiLastDropNs = 0L;
+        long aiLastRotateNs = 0L;
+        int  aiDir = 1; // simple left/right alternation
+
         Side(int id) { this.id = id; }
     }
+
+    /* AI cadence (nanoseconds) */
+    private static final long AI_MOVE_INTERVAL_NS   = 180_000_000L;   // ~0.18s
+    private static final long AI_DROP_INTERVAL_NS   = 350_000_000L;   // ~0.35s
+    private static final long AI_ROTATE_INTERVAL_NS = 2_000_000_000L; // ~2.0s
+    private static final long AI_DIR_FLIP_INTERVAL_NS = 1_200_000_000L; // ~1.2s
 
     /* Sides (1 or 2) */
     private final List<Side> sides = new ArrayList<>(2);
@@ -104,10 +119,13 @@ public class GameView extends AbstractScreen {
 
     private void tickSide(Side S, long now) {
         if (!S.paused) {
+            // Lightweight AI: only when enabled and game not over
+            if (aiEnabled && !S.gameOver) runAI(S, now);
+
             for (GameEntity e : S.entities) e.tick(now);
             removeDeadAndRespawn(S);
             if (S.spawnQueued && !S.gameOver) { S.spawnQueued = false; spawnActivePiece(S); }
-            for (Sprite<?, ?> s : S.sprites) if (s instanceof PieceSprite ps) ps.syncToEntity();
+            for (Sprite<?, ?> spr : S.sprites) if (spr instanceof PieceSprite ps) ps.syncToEntity();
 
             int cleared = S.board.clearFullRows();
             if (cleared > 0) {
@@ -168,9 +186,11 @@ public class GameView extends AbstractScreen {
         getChildren().setAll(content);
         StackPane.setAlignment(content, Pos.CENTER);
 
+        // Focus + controls
         setFocusTraversable(true);
         setOnKeyPressed(this::onKey);
 
+        // Prime pieces
         for (Side s : sides) {
             s.nextPiece = pieceBag.next();
             spawnActivePiece(s);
@@ -192,10 +212,10 @@ public class GameView extends AbstractScreen {
         S.nextBox.getChildren().add(S.nextLayer);
         S.nextBox.setStyle(
                 "-fx-background-color: rgba(12,18,28,1.0);" +
-                        "-fx-border-color: rgba(255,255,255,0.18);" +
-                        "-fx-border-width: 1;" +
-                        "-fx-background-radius: 6;" +
-                        "-fx-border-radius: 6;"
+                "-fx-border-color: rgba(255,255,255,0.18);" +
+                "-fx-border-width: 1;" +
+                "-fx-background-radius: 6;" +
+                "-fx-border-radius: 6;"
         );
 
         for (Label lbl : new Label[]{S.scoreLabel, S.linesLabel, S.timeLabel})
@@ -273,7 +293,12 @@ public class GameView extends AbstractScreen {
         int col = Math.max(0, Math.min(desiredCol, GameConfig.get().cols() - width));
 
         if (!canPlaceAt(S.board, t, 0, 0, col)) {
-            triggerGameOver(S);
+            // game over (no prompt here; we defer to exit)
+            S.gameOver = true;
+            S.paused = true;
+            S.pauseOverlay.setText("Game Over\nESC to Main Menu\nR to Restart");
+            S.pauseOverlay.setVisible(true);
+            if (GameConfig.get().isSfxEnabled()) Sound.playGameOver();
             return;
         }
 
@@ -313,26 +338,18 @@ public class GameView extends AbstractScreen {
         return null;
     }
 
-    private void triggerGameOver(Side S) {
-        S.gameOver = true;
-        S.paused = true;
-        S.pauseOverlay.setText("Game Over\nESC to Main Menu\nR to Restart");
-        S.pauseOverlay.setVisible(true);
-        if (GameConfig.get().isSfxEnabled()) Sound.playGameOver();
-    }
+    /* ---------- High scores (deferred until exit) ---------- */
 
-    /*  High scores: defer prompting until exit  */
     /** Returns true if the given score would appear in the top-10. */
     private boolean qualifiesForHighScore(int score) {
-        // Prevent 0 from ever qualifying
+        // Never allow 0 to qualify
         if (score <= 0) return false;
 
         var list = HighScoreStore.load(); // sorted desc as per our store
         if (list.size() < 10) return true;
-        int lastScore = list.getLast().score();
+        int lastScore = list.getLast().score;
         return score > lastScore;
     }
-
 
     /** Run prompts sequentially for all qualifying sides, then exit to menu. */
     private void handleHighScoresAndExit() {
@@ -421,6 +438,34 @@ public class GameView extends AbstractScreen {
         else if (code == right) piece.tryRight();
         else if (code == rot)  { piece.tryRotateCW(); if (GameConfig.get().isSfxEnabled()) Sound.playRotate(); }
         else if (code == down) piece.softDropOrLock();
+    }
+
+    /* --------- Simple per-side AI driver --------- */
+    private void runAI(Side S, long now) {
+        ActivePieceEntity piece = S.entities.stream()
+                .filter(ge -> ge.entityType() == EntityType.ACTIVE_PIECE)
+                .map(ge -> (ActivePieceEntity) ge)
+                .findFirst().orElse(null);
+        if (piece == null) return;
+
+        // Alternate horizontal nudges
+        if (now - S.aiLastMoveNs >= AI_MOVE_INTERVAL_NS) {
+            if (S.aiDir >= 0) piece.tryRight(); else piece.tryLeft();
+            S.aiLastMoveNs = now;
+        }
+        // Periodically drop
+        if (now - S.aiLastDropNs >= AI_DROP_INTERVAL_NS) {
+            piece.softDropOrLock();
+            S.aiLastDropNs = now;
+        }
+        // Occasionally rotate
+        if (now - S.aiLastRotateNs >= AI_ROTATE_INTERVAL_NS) {
+            piece.tryRotateCW();
+            if (GameConfig.get().isSfxEnabled()) Sound.playRotate();
+            S.aiLastRotateNs = now;
+        }
+        // Flip direction every so often
+        if ((now / AI_DIR_FLIP_INTERVAL_NS) % 2 == 0) S.aiDir = 1; else S.aiDir = -1;
     }
 
     /* Rendering / HUD */
