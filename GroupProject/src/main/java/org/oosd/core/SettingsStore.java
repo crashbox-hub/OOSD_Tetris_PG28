@@ -46,15 +46,16 @@ public final class SettingsStore {
     private static String toJson(GameConfig c) {
         // Pretty JSON that our regex reader understands.
         return "{\n" +
-                "  \"rows\": "          + c.rows()           + ",\n" +
-                "  \"cols\": "          + c.cols()           + ",\n" +
-                "  \"tileSize\": "      + c.tileSize()       + ",\n" +
-                "  \"gravityCps\": "    + c.gravityCps()     + ",\n" +
-                "  \"spawnCol\": "      + c.spawnCol()       + ",\n" +
-                "  \"musicEnabled\": "  + c.isMusicEnabled() + ",\n" +
-                "  \"sfxEnabled\": "    + c.isSfxEnabled()   + ",\n" +
-                "  \"players\": "       + c.players()        + ",\n" +
-                "  \"aiEnabled\": "     + c.isAiEnabled()    + "\n" +
+                "  \"rows\": "           + c.rows()            + ",\n" +
+                "  \"cols\": "           + c.cols()            + ",\n" +
+                "  \"tileSize\": "       + c.tileSize()        + ",\n" +
+                "  \"gravityCps\": "     + c.gravityCps()      + ",\n" +
+                "  \"spawnCol\": "       + c.spawnCol()        + ",\n" +
+                "  \"musicEnabled\": "   + c.isMusicEnabled()  + ",\n" +
+                "  \"sfxEnabled\": "     + c.isSfxEnabled()    + ",\n" +
+                "  \"players\": "        + c.players()         + ",\n" +
+                "  \"aiP1Enabled\": "    + c.isAiP1Enabled()   + ",\n" +   // per-player
+                "  \"aiP2Enabled\": "    + c.isAiP2Enabled()   + "\n" +    // per-player
                 "}\n";
     }
 
@@ -67,7 +68,19 @@ public final class SettingsStore {
         c.setMusicEnabled (readBoolean(json, "musicEnabled",  c.isMusicEnabled()));
         c.setSfxEnabled   (readBoolean(json, "sfxEnabled",    c.isSfxEnabled()));
         c.setPlayers      (readInt    (json, "players",       c.players()));
-        c.setAiEnabled    (readBoolean(json, "aiEnabled",     c.isAiEnabled())); // <-- NEW (defaults if missing)
+
+        // --- Per-player AI flags (with legacy fallback) ---
+        Boolean p1 = readBooleanOrNull(json, "aiP1Enabled");
+        Boolean p2 = readBooleanOrNull(json, "aiP2Enabled");
+        Boolean legacy = readBooleanOrNull(json, "aiEnabled"); // older builds
+
+        boolean aiP1 = (p1 != null) ? p1
+                : (legacy != null ? legacy : c.isAiP1Enabled());
+        boolean aiP2 = (p2 != null) ? p2
+                : c.isAiP2Enabled(); // do NOT auto-enable P2 from legacy
+
+        c.setAiP1Enabled(aiP1);
+        c.setAiP2Enabled(aiP2);
     }
 
     /* ---------- tiny helpers ---------- */
@@ -85,5 +98,10 @@ public final class SettingsStore {
     private static boolean readBoolean(String s, String key, boolean def) {
         Matcher m = Pattern.compile("\"" + Pattern.quote(key) + "\"\\s*:\\s*(true|false)").matcher(s);
         return m.find() ? Boolean.parseBoolean(m.group(1)) : def;
+    }
+
+    private static Boolean readBooleanOrNull(String s, String key) {
+        Matcher m = Pattern.compile("\"" + Pattern.quote(key) + "\"\\s*:\\s*(true|false)").matcher(s);
+        return m.find() ? Boolean.parseBoolean(m.group(1)) : null;
     }
 }

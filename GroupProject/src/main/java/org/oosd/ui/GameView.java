@@ -28,6 +28,7 @@ import org.oosd.ui.sprites.SpriteFactory;
 
 import java.util.*;
 
+/* Honors per-player AI (Human/AI for P1 & P2) as configured in GameConfig. */
 public class GameView extends AbstractScreen {
 
     /* Config-derived sizing */
@@ -36,9 +37,6 @@ public class GameView extends AbstractScreen {
     /* Mode */
     private final int players;           // 1 or 2
     private final Runnable onExitToMenu;
-
-    /* AI toggle (from config) */
-    private final boolean aiEnabled = GameConfig.get().isAiEnabled();
 
     /* Shared piece generator (7-bag) */
     private static final class PieceBag {
@@ -88,20 +86,17 @@ public class GameView extends AbstractScreen {
         long runStartNanos = 0L;
         boolean spawnQueued = false;
 
-        // AI timing (per-side)
+        // NEW: per-side AI enable (copied from GameConfig on construction)
+        boolean ai = false;
+
+        // NEW: simple AI timers/state per side
         long aiLastMoveNs = 0L;
         long aiLastDropNs = 0L;
         long aiLastRotateNs = 0L;
-        int  aiDir = 1; // simple left/right alternation
+        int  aiLastTargetCol = 5;
 
         Side(int id) { this.id = id; }
     }
-
-    /* AI cadence (nanoseconds) */
-    private static final long AI_MOVE_INTERVAL_NS   = 180_000_000L;   // ~0.18s
-    private static final long AI_DROP_INTERVAL_NS   = 350_000_000L;   // ~0.35s
-    private static final long AI_ROTATE_INTERVAL_NS = 2_000_000_000L; // ~2.0s
-    private static final long AI_DIR_FLIP_INTERVAL_NS = 1_200_000_000L; // ~1.2s
 
     /* Sides (1 or 2) */
     private final List<Side> sides = new ArrayList<>(2);
@@ -113,19 +108,20 @@ public class GameView extends AbstractScreen {
     /* Loop */
     private final AnimationTimer loop = new AnimationTimer() {
         @Override public void handle(long now) {
-            for (Side s : sides) tickSide(s, now);
+            for (Side s : sides) {
+                // NEW: drive AI before tick when active, unpaused, not game over
+                if (s.ai && !s.paused && !s.gameOver) runAI(s, now);  // NEW
+                tickSide(s, now);
+            }
         }
     };
 
     private void tickSide(Side S, long now) {
         if (!S.paused) {
-            // Lightweight AI: only when enabled and game not over
-            if (aiEnabled && !S.gameOver) runAI(S, now);
-
             for (GameEntity e : S.entities) e.tick(now);
             removeDeadAndRespawn(S);
             if (S.spawnQueued && !S.gameOver) { S.spawnQueued = false; spawnActivePiece(S); }
-            for (Sprite<?, ?> spr : S.sprites) if (spr instanceof PieceSprite ps) ps.syncToEntity();
+            for (Sprite<?, ?> s : S.sprites) if (s instanceof PieceSprite ps) ps.syncToEntity();
 
             int cleared = S.board.clearFullRows();
             if (cleared > 0) {
@@ -157,9 +153,17 @@ public class GameView extends AbstractScreen {
         getStyleClass().add("app-bg");
         setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
 
+        //  copy per-player AI flags from GameConfig
+        final GameConfig cfg = GameConfig.get();
+
         sides.add(new Side(1));
         if (this.players == 2) sides.add(new Side(2));
 
+        // apply AI flags to Side objects
+        for (Side s : sides) {
+            if (s.id == 1) s.ai = cfg.isAiP1Enabled();
+            if (s.id == 2) s.ai = cfg.isAiP2Enabled();
+        }
         HBox row = new HBox(this.players == 1 ? 16 : 24);
         row.getStyleClass().add("game-row");
         row.setAlignment(Pos.CENTER);
@@ -167,7 +171,8 @@ public class GameView extends AbstractScreen {
 
         Button back = new Button("Back");
         back.getStyleClass().addAll("btn", "btn-ghost");
-        back.setOnAction(e -> { if (onExitToMenu != null) onExitToMenu.run(); });
+        back.setOnAction(e -> { if (onExitToMenu != null) handleHighScoresAndExit(); });
+
         HBox backBar = new HBox(back);
         backBar.getStyleClass().add("center-bar");
         backBar.setAlignment(Pos.CENTER);
@@ -186,11 +191,9 @@ public class GameView extends AbstractScreen {
         getChildren().setAll(content);
         StackPane.setAlignment(content, Pos.CENTER);
 
-        // Focus + controls
         setFocusTraversable(true);
         setOnKeyPressed(this::onKey);
 
-        // Prime pieces
         for (Side s : sides) {
             s.nextPiece = pieceBag.next();
             spawnActivePiece(s);
@@ -212,10 +215,10 @@ public class GameView extends AbstractScreen {
         S.nextBox.getChildren().add(S.nextLayer);
         S.nextBox.setStyle(
                 "-fx-background-color: rgba(12,18,28,1.0);" +
-                "-fx-border-color: rgba(255,255,255,0.18);" +
-                "-fx-border-width: 1;" +
-                "-fx-background-radius: 6;" +
-                "-fx-border-radius: 6;"
+                        "-fx-border-color: rgba(255,255,255,0.18);" +
+                        "-fx-border-width: 1;" +
+                        "-fx-background-radius: 6;" +
+                        "-fx-border-radius: 6;"
         );
 
         for (Label lbl : new Label[]{S.scoreLabel, S.linesLabel, S.timeLabel})
@@ -254,8 +257,8 @@ public class GameView extends AbstractScreen {
         double totalBoardsW = players == 1 ? boardW() : (boardW() * 2 + gap);
         double totalBoardsH = boardH() + 160; // board + rough HUD
 
-        double scaleX = (containerW * 0.92) / totalBoardsW; // margin
-        double scaleY = (containerH * 0.90) / totalBoardsH; // margin
+        double scaleX = (containerW * 0.92) / totalBoardsW;
+        double scaleY = (containerH * 0.90) / totalBoardsH;
 
         double s = Math.min(1.0, Math.min(scaleX, scaleY));
         if (s <= 0) s = 1.0;
@@ -293,12 +296,7 @@ public class GameView extends AbstractScreen {
         int col = Math.max(0, Math.min(desiredCol, GameConfig.get().cols() - width));
 
         if (!canPlaceAt(S.board, t, 0, 0, col)) {
-            // game over (no prompt here; we defer to exit)
-            S.gameOver = true;
-            S.paused = true;
-            S.pauseOverlay.setText("Game Over\nESC to Main Menu\nR to Restart");
-            S.pauseOverlay.setVisible(true);
-            if (GameConfig.get().isSfxEnabled()) Sound.playGameOver();
+            triggerGameOver(S);
             return;
         }
 
@@ -338,13 +336,20 @@ public class GameView extends AbstractScreen {
         return null;
     }
 
-    /* ---------- High scores (deferred until exit) ---------- */
+    private void triggerGameOver(Side S) {
+        S.gameOver = true;
+        S.paused = true;
+        S.pauseOverlay.setText("Game Over\nESC to Main Menu\nR to Restart");
+        S.pauseOverlay.setVisible(true);
+        if (GameConfig.get().isSfxEnabled()) Sound.playGameOver();
+    }
 
-    /* Returns true if the given score would appear in the top-10. */
+    /*  High scores: defer prompting until exit
+    Returns true if the given score would appear in the top-10 (non-zero). */
+
     private boolean qualifiesForHighScore(int score) {
-        // Never allow 0 to qualify
-        if (score <= 0) return false;
-        var list = HighScoreStore.load(); // sorted desc as per our store
+        if (score <= 0) return false; // never prompt for 0
+        var list = HighScoreStore.load(); // sorted desc
         if (list.size() < 10) return true;
         int lastScore = list.getLast().score();
         return score > lastScore;
@@ -352,16 +357,16 @@ public class GameView extends AbstractScreen {
 
     /* Run prompts sequentially for all qualifying sides, then exit to menu. */
     private void handleHighScoresAndExit() {
-        // stop animation while dialogs are shown
         loop.stop();
-
         for (Side s : sides) {
-            if (!s.scoreSaved && qualifiesForHighScore(s.score)) {
+            // Only consider if not already saved, qualifies, and NOT AI
+            if (!s.scoreSaved && qualifiesForHighScore(s.score) && !s.ai) {
                 promptHighScore(s);
             }
         }
         if (onExitToMenu != null) onExitToMenu.run();
     }
+
 
     /** Blocking prompt used only on exit (safe: loop stopped). */
     private void promptHighScore(Side S) {
@@ -394,11 +399,12 @@ public class GameView extends AbstractScreen {
     private void onKey(KeyEvent e) {
         if (players == 1) {
             Side s = sides.getFirst();
-            handleControls(s, e.getCode(), KeyCode.LEFT, KeyCode.RIGHT, KeyCode.UP, KeyCode.DOWN);
+
+            //  ignore human key controls if this side is AI
+            if (!s.ai) handleControls(s, e.getCode(), KeyCode.LEFT, KeyCode.RIGHT, KeyCode.UP, KeyCode.DOWN);
+
             if (e.getCode() == KeyCode.P && !s.gameOver) togglePause(s);
-            if (e.getCode() == KeyCode.ESCAPE && s.paused) {
-                handleHighScoresAndExit();
-            }
+            if (e.getCode() == KeyCode.ESCAPE && s.paused) handleHighScoresAndExit();
             if (e.getCode() == KeyCode.R && s.paused) restartSide(s);
             return;
         }
@@ -406,16 +412,15 @@ public class GameView extends AbstractScreen {
         Side s1 = sides.get(0);
         Side s2 = sides.get(1);
 
-        handleControls(s1, e.getCode(), KeyCode.LEFT, KeyCode.RIGHT, KeyCode.UP, KeyCode.DOWN);
-        handleControls(s2, e.getCode(), KeyCode.A,    KeyCode.D,     KeyCode.W,  KeyCode.S);
+        // only route keys to sides that are Human
+        if (!s1.ai) handleControls(s1, e.getCode(), KeyCode.LEFT, KeyCode.RIGHT, KeyCode.UP, KeyCode.DOWN);
+        if (!s2.ai) handleControls(s2, e.getCode(), KeyCode.A,    KeyCode.D,     KeyCode.W,  KeyCode.S);
 
         if (e.getCode() == KeyCode.P && !s1.gameOver) togglePause(s1);
         if (e.getCode() == KeyCode.L && !s2.gameOver) togglePause(s2);
 
         boolean anyPaused = s1.paused || s2.paused;
-        if (e.getCode() == KeyCode.ESCAPE && anyPaused) {
-            handleHighScoresAndExit();
-        }
+        if (e.getCode() == KeyCode.ESCAPE && anyPaused) handleHighScoresAndExit();
         if (e.getCode() == KeyCode.R && anyPaused) { restartSide(s1); restartSide(s2); }
     }
 
@@ -439,7 +444,13 @@ public class GameView extends AbstractScreen {
         else if (code == down) piece.softDropOrLock();
     }
 
-    /* --------- Simple per-side AI driver --------- */
+    /* ----------  simple AI driver per side ---------- */
+
+    // Simple tempo values tuned for a casual bot
+    private static final long AI_MOVE_INTERVAL_NS   = 180_000_000L;   // ~0.18s
+    private static final long AI_DROP_INTERVAL_NS   = 350_000_000L;   // ~0.35s
+    private static final long AI_ROTATE_INTERVAL_NS = 2_000_000_000L; // ~2.0s
+
     private void runAI(Side S, long now) {
         ActivePieceEntity piece = S.entities.stream()
                 .filter(ge -> ge.entityType() == EntityType.ACTIVE_PIECE)
@@ -447,24 +458,58 @@ public class GameView extends AbstractScreen {
                 .findFirst().orElse(null);
         if (piece == null) return;
 
-        // Alternate horizontal nudges
+        int px = pieceCol(piece);
+        int targetCol = chooseTargetColumn(S);
+        S.aiLastTargetCol = targetCol;
+
         if (now - S.aiLastMoveNs >= AI_MOVE_INTERVAL_NS) {
-            if (S.aiDir >= 0) piece.tryRight(); else piece.tryLeft();
+            if (px < targetCol)      piece.tryRight();
+            else if (px > targetCol) piece.tryLeft();
             S.aiLastMoveNs = now;
         }
-        // Periodically drop
-        if (now - S.aiLastDropNs >= AI_DROP_INTERVAL_NS) {
+
+        if (px == targetCol && (now - S.aiLastDropNs >= AI_DROP_INTERVAL_NS)) {
             piece.softDropOrLock();
             S.aiLastDropNs = now;
         }
-        // Occasionally rotate
-        if (now - S.aiLastRotateNs >= AI_ROTATE_INTERVAL_NS) {
+
+        if (px == targetCol && (now - S.aiLastRotateNs >= AI_ROTATE_INTERVAL_NS)) {
             piece.tryRotateCW();
             if (GameConfig.get().isSfxEnabled()) Sound.playRotate();
             S.aiLastRotateNs = now;
         }
-        // Flip direction every so often
-        if ((now / AI_DIR_FLIP_INTERVAL_NS) % 2 == 0) S.aiDir = 1; else S.aiDir = -1;
+    }
+
+    private int pieceCol(ActivePieceEntity piece) {
+        double x = piece.x();
+        // If x is in pixels, convert heuristically (works with our entities)
+        if (x > GameConfig.get().cols() + 2) x = x / TILE;
+        return (int) Math.round(x);
+    }
+
+    private int chooseTargetColumn(Side S) {
+        int cols = GameConfig.get().cols();
+        int rows = GameConfig.get().rows();
+        int[] heights = new int[cols];
+
+        for (int c = 0; c < cols; c++) {
+            int h = 0;
+            for (int r = 0; r < rows; r++) {
+                if (S.board.get(r, c) != 0) { h = rows - r; break; }
+            }
+            heights[c] = h;
+        }
+
+        int minH = Integer.MAX_VALUE;
+        for (int h : heights) minH = Math.min(minH, h);
+
+        List<Integer> candidates = new ArrayList<>();
+        for (int c = 0; c < cols; c++) if (heights[c] == minH) candidates.add(c);
+
+        int center = cols / 2;
+        candidates.sort(Comparator.comparingInt(c -> Math.abs(c - center)));
+        for (int c : candidates) if (c != S.aiLastTargetCol) return c;
+        return candidates.getFirst();
     }
 
     /* Rendering / HUD */

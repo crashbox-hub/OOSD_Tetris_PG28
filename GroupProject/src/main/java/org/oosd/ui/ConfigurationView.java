@@ -126,10 +126,16 @@ public class ConfigurationView extends AbstractScreen {
         });
 
         // --- AI Play toggle (merged from branch) ---
-        row = addToggleRow(grid, row, "AI Play (On/Off):", cfg.isAiEnabled(), isSel -> {
-            cfg.setAiEnabled(isSel);
+        row = addToggleRow(grid, row, "Player 1 AI Play (On/Off):", cfg.isAiP1Enabled(), isSel -> {
+            cfg.setAiP1Enabled(isSel);
             SettingsStore.save(cfg);
         });
+
+        row = addToggleRow(grid, row, "Player 2 AI Play (On/Off):", cfg.isAiP2Enabled(), isSel -> {
+            cfg.setAiP2Enabled(isSel);
+            SettingsStore.save(cfg);
+        });
+
 
         // Placeholder
         row = addToggleRow(grid, row, "Extend Mode (On/Off):", false, isSel -> {});

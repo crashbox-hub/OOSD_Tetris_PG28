@@ -26,7 +26,8 @@ public final class GameConfig {
     private static final boolean DEF_MUSIC    = true;
     private static final boolean DEF_SFX      = true;
     private static final int    DEF_PLAYERS   = 1;     // 1 or 2
-    private static final boolean DEF_AI       = false; // new
+    private static final boolean DEF_AI_P1    = false; // new
+    private static final boolean DEF_AI_P2    = false; // new
 
     /* ---------------- Instance state ---------------- */
 
@@ -48,8 +49,9 @@ public final class GameConfig {
     // Players (1 or 2)
     private int players = DEF_PLAYERS;
 
-    // AI toggle
-    private boolean aiEnabled = DEF_AI;
+    // Controller type per player (true = AI, false = Human)
+    private boolean aiP1Enabled = DEF_AI_P1;
+    private boolean aiP2Enabled = DEF_AI_P2;
 
     private GameConfig() { }
 
@@ -64,7 +66,11 @@ public final class GameConfig {
     public boolean isMusicEnabled()   { return musicEnabled; }
     public boolean isSfxEnabled()     { return sfxEnabled; }
     public int players()              { return players; }
-    public boolean isAiEnabled()      { return aiEnabled; }
+
+    // New: per-player AI flags
+    public boolean isAiP1Enabled()    { return aiP1Enabled; }
+    public boolean isAiP2Enabled()    { return aiP2Enabled; }
+
 
     /* ---------------- Setters (with clamping) ---------------- */
 
@@ -78,7 +84,7 @@ public final class GameConfig {
         spawnCol = clamp(spawnCol, 0, Math.max(0, cols - 1));
     }
 
-    public void setTileSize(int s)         { tileSize = Math.max(8, s); }      // protect against tiny sizes
+    public void setTileSize(int s)         { tileSize = Math.max(8, s); } // protect against tiny sizes
     public void setGravityCps(double g)    { gravityCps = Math.max(0.1, g); }
     public void setSpawnCol(int c)         { spawnCol = clamp(c, 0, Math.max(0, cols - 1)); }
 
@@ -92,12 +98,12 @@ public final class GameConfig {
         rows = clamp(rows, currentMinRows(), currentMaxRows());
         cols = clamp(cols, currentMinCols(), currentMaxCols());
         spawnCol = clamp(spawnCol, 0, Math.max(0, cols - 1));
+        // If switching to 1P, Player 2 controller choice is irrelevant but we keep it persisted.
     }
 
-    /** Enable/disable AI play */
-    public void setAiEnabled(boolean enabled) {
-        aiEnabled = enabled;
-    }
+    // New: per-player AI setters
+    public void setAiP1Enabled(boolean v)  { aiP1Enabled = v; }
+    public void setAiP2Enabled(boolean v)  { aiP2Enabled = v; }
 
     /* ---------------- Helpers ---------------- */
 
@@ -109,4 +115,6 @@ public final class GameConfig {
     private static int clamp(int v, int lo, int hi) {
         return (v < lo) ? lo : Math.min(v, hi);
     }
+
+
 }
