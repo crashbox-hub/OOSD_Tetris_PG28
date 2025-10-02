@@ -11,6 +11,9 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import org.oosd.core.AbstractScreen;
+import org.oosd.core.GameConfig;
+import org.oosd.core.SettingsStore;
+
 
 public class MainMenuView extends AbstractScreen {
 
@@ -87,10 +90,21 @@ public class MainMenuView extends AbstractScreen {
         setFocusTraversable(true);
     }
 
-    @Override public void onShow() {
+    @Override
+    public void onShow() {
         requestFocus();
-        org.oosd.ui.Sound.startMenuBgm();
+
+        // Honor the last saved setting
+        GameConfig cfg = GameConfig.get();
+        SettingsStore.loadInto(cfg);
+
+        if (cfg.isMusicEnabled()) {
+            org.oosd.ui.Sound.startMenuBgm();
+        } else {
+            org.oosd.ui.Sound.stopBgm();
+        }
     }
+
     @Override public void onHide() {
         org.oosd.ui.Sound.stopBgm();
     }

@@ -13,7 +13,7 @@ import org.oosd.core.SettingsStore;
 public class ConfigurationView extends AbstractScreen {
 
     public ConfigurationView(Runnable onBack) {
-        // Load current JSON config first so the UI reflects it
+        // Load JSON so UI reflects persisted settings
         GameConfig cfg = GameConfig.get();
         SettingsStore.loadInto(cfg);
 
@@ -60,7 +60,7 @@ public class ConfigurationView extends AbstractScreen {
         grid.add(widthLbl, 0, row); grid.add(width, 1, row);
         grid.add(widthVal, 2, row++); GridPane.setHalignment(widthVal, HPos.RIGHT);
 
-        // --- Height (15..30) — allow taller boards if you want ---
+        // --- Height (15..30) ---
         Label heightLbl = label("Field Height (No of cells):");
         Slider height = slider(15, 30, cfg.rows());
         Label heightVal = valueLabel(height);
@@ -72,18 +72,23 @@ public class ConfigurationView extends AbstractScreen {
         grid.add(heightLbl, 0, row); grid.add(height, 1, row);
         grid.add(heightVal, 2, row++); GridPane.setHalignment(heightVal, HPos.RIGHT);
 
-        // --- Game Level (example mapping; ) ---
+        // --- Game Level (maps to gravityCps) ---
         Label levelLbl = label("Game Level:");
-        int levelInitial = 1;
+        int levelInitial = levelFromGravity(cfg.gravityCps()); // <-- derive from saved gravity
         Slider level = slider(1, 10, levelInitial);
         Label levelVal = valueLabel(level);
+
         level.valueProperty().addListener((obs, o, n) -> {
             int v = n.intValue();
-            // base 1.8 cps + 0.25 per level step
-            cfg.setGravityCps(1.8 + 0.25 * (v - 1));
+            double cps = gravityFromLevel(v);
+            cfg.setGravityCps(cps);
             SettingsStore.save(cfg);
         });
-        grid.add(levelLbl, 0, row); grid.add(level, 1, row);
+
+        HBox levelBox = new HBox(10, level);
+        levelBox.setAlignment(Pos.CENTER_LEFT);
+
+        grid.add(levelLbl, 0, row); grid.add(levelBox, 1, row);
         grid.add(levelVal, 2, row++); GridPane.setHalignment(levelVal, HPos.RIGHT);
 
         // --- Players: 1 or 2 ---
@@ -107,7 +112,6 @@ public class ConfigurationView extends AbstractScreen {
             playersState.setText(p == 2 ? "2P" : "1P");
             SettingsStore.save(cfg);
         });
-
         grid.add(playersLbl, 0, row);
         grid.add(playersBox, 1, row);
         grid.add(playersState, 2, row++); GridPane.setHalignment(playersState, HPos.RIGHT);
@@ -125,7 +129,7 @@ public class ConfigurationView extends AbstractScreen {
             SettingsStore.save(cfg);
         });
 
-        // (Placeholders – wire up later as needed)
+        // (Placeholders)
         row = addToggleRow(grid, row, "AI Play (On/Off):", false, isSel -> {});
         row = addToggleRow(grid, row, "Extend Mode (On/Off):", false, isSel -> {});
 
@@ -174,11 +178,9 @@ public class ConfigurationView extends AbstractScreen {
         return l;
     }
 
-    /** Adds a toggle row (label + checkbox + "On/Off" indicator) and runs the callback whenever it changes. */
     private int addToggleRow(GridPane grid, int row, String labelText, boolean initial,
                              java.util.function.Consumer<Boolean> onToggle) {
         Label lbl = label(labelText);
-
         CheckBox cb = new CheckBox();
         cb.getStyleClass().add("config-checkbox");
         cb.setSelected(initial);
@@ -198,6 +200,17 @@ public class ConfigurationView extends AbstractScreen {
         grid.add(state, 2, row);
         GridPane.setHalignment(state, HPos.RIGHT);
         return row + 1;
+    }
+
+    // ---- Level/Gravity mapping ----
+    private static double gravityFromLevel(int level) {
+        int lvl = Math.max(1, Math.min(10, level));
+        return 1.8 + 0.25 * (lvl - 1);
+    }
+    private static int levelFromGravity(double cps) {
+        // invert mapping and clamp to 1..10
+        int lvl = (int)Math.round(((cps - 1.8) / 0.25) + 1.0);
+        return Math.max(1, Math.min(10, lvl));
     }
 
     @Override public void onShow() {
