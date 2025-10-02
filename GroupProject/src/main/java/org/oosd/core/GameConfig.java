@@ -97,6 +97,6 @@ public final class GameConfig {
     private int currentMaxRows() { return (players == 2) ? MAX_ROWS_2P : MAX_ROWS_1P; }
 
     private static int clamp(int v, int lo, int hi) {
-        return (v < lo) ? lo : (v > hi) ? hi : v;
+        return (v < lo) ? lo : Math.min(v, hi);
     }
 }
