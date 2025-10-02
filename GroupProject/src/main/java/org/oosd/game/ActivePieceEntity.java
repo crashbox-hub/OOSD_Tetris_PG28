@@ -49,7 +49,7 @@ public class ActivePieceEntity extends GameEntity {
     public boolean tryRight()     { return tryMove(0, +1, 0); }
 
     /* One-cell soft drop. If blocked, locks to board and marks dead.
-        @return true if moved down, false if locked.
+     * @return true if moved down, false if locked.
      */
     public boolean softDropOrLock() {
         if (tryMove(1, 0, 0)) return true;
