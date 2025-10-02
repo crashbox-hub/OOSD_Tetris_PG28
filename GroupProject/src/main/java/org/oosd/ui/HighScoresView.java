@@ -12,6 +12,9 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import org.oosd.core.AbstractScreen;
+import org.oosd.core.HighScoreStore;
+
+import java.util.List;
 
 public class HighScoresView extends AbstractScreen {
 
@@ -46,15 +49,8 @@ public class HighScoresView extends AbstractScreen {
         title.setFont(Font.font(null, FontWeight.EXTRA_BOLD, 36));
         title.setEffect(new DropShadow(24, Color.color(0,0,0,0.6)));
 
-        /* ---------- Scores List ---------- */
+        /* ---------- Scores List (loaded from JSON) ---------- */
         ListView<String> list = new ListView<>();
-        list.getItems().addAll(
-                "1) Tom - 12000","2) Sar - 9500","3) Alx - 9000",
-                "4) Dom - 8500","5) Eve - 8000","6) Cal - 7500",
-                "7) Grg - 7000","8) Hap - 6500","9) Ian - 6000","10) Jax - 5500"
-        );
-
-        // Visuals for list: dark glass look + cyan border
         list.setBackground(new Background(new BackgroundFill(
                 Color.color(1,1,1,0.06), new CornerRadii(10), Insets.EMPTY
         )));
@@ -64,6 +60,18 @@ public class HighScoresView extends AbstractScreen {
         )));
         list.setPrefWidth(420);
         list.setPrefHeight(360);
+
+        // Load scores via HighScoreStore
+        List<HighScoreStore.Entry> scores = HighScoreStore.load();
+        if (scores.isEmpty()) {
+            list.getItems().add("No scores yet — play a game!");
+        } else {
+            int rank = 1;
+            for (HighScoreStore.Entry e : scores) {
+                // Format: "1) AAA - 12000"
+                list.getItems().add(rank++ + ") " + e.name + " - " + e.score);
+            }
+        }
 
         // Cell styling: white text; top 3 colored gold/silver/bronze
         list.setCellFactory(v -> new ListCell<>() {
@@ -86,15 +94,15 @@ public class HighScoresView extends AbstractScreen {
                         CornerRadii.EMPTY, Insets.EMPTY
                 )));
 
-                // top-3 medal tint
-                if (item.startsWith("1)")) setTextFill(Color.web("#FFD54F")); // gold
+                // top-3 medal tint (only if list actually has ranked items)
+                if (item.startsWith("1)")) setTextFill(Color.web("#FFD54F"));  // gold
                 else if (item.startsWith("2)")) setTextFill(Color.web("#CFD8DC")); // silver
                 else if (item.startsWith("3)")) setTextFill(Color.web("#FFAB91")); // bronze
             }
         });
 
         /* ---------- Back button (ghost style like Exit) ---------- */
-        Button back = ghostButton("Back");
+        Button back = ghostButton();
         back.setOnAction(e -> { if (onBack != null) onBack.run(); });
         HBox backBox = new HBox(back);
         backBox.setAlignment(Pos.CENTER);
@@ -118,8 +126,8 @@ public class HighScoresView extends AbstractScreen {
     @Override public void onHide() { }
 
     /* ---------- Shared button styling (matches MainMenuView ghost) ---------- */
-    private Button ghostButton(String text) {
-        Button b = baseButton(text);
+    private Button ghostButton() {
+        Button b = baseButton("Back");
         b.setBackground(new Background(new BackgroundFill(
                 Color.TRANSPARENT, new CornerRadii(12), Insets.EMPTY
         )));

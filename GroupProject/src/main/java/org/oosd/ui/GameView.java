@@ -6,6 +6,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Group;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.TextInputDialog;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
@@ -19,14 +20,17 @@ import javafx.scene.text.FontWeight;
 
 import org.oosd.core.AbstractScreen;
 import org.oosd.core.GameConfig;
+import org.oosd.core.HighScoreStore;
 import org.oosd.game.*;
 import org.oosd.ui.sprites.PieceSprite;
 import org.oosd.ui.sprites.Sprite;
 import org.oosd.ui.sprites.SpriteFactory;
 
+import javafx.application.Platform;
+
+
 import java.util.*;
 
-/* GameView with 1|2 player support, centered layout, and responsive scaling. */
 public class GameView extends AbstractScreen {
 
     /* Config-derived sizing */
@@ -78,6 +82,7 @@ public class GameView extends AbstractScreen {
         Tetromino nextPiece = null;
         boolean paused = false;
         boolean gameOver = false;
+        boolean scoreSaved = false;   // <-- prevent multiple prompts
         int score = 0;
         int lines = 0;
         long runStartNanos = 0L;
@@ -134,22 +139,17 @@ public class GameView extends AbstractScreen {
         this.onExitToMenu = onExitToMenu;
         this.players = (players == 2 ? 2 : 1);
 
-        // ----- OUTER ROOT (this) -----
-        // This class extends StackPane, so style it and let it fill the window.
         getStyleClass().add("app-bg");
         setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
 
-        // Build 1 or 2 sides
         sides.add(new Side(1));
         if (this.players == 2) sides.add(new Side(2));
 
-        // Row of boards (centered)
         HBox row = new HBox(this.players == 1 ? 16 : 24);
         row.getStyleClass().add("game-row");
         row.setAlignment(Pos.CENTER);
         for (Side s : sides) row.getChildren().add(buildSide(s));
 
-        // Back button bar (centered)
         Button back = new Button("Back");
         back.getStyleClass().addAll("btn", "btn-ghost");
         back.setOnAction(e -> { if (onExitToMenu != null) onExitToMenu.run(); });
@@ -157,35 +157,29 @@ public class GameView extends AbstractScreen {
         backBar.getStyleClass().add("center-bar");
         backBar.setAlignment(Pos.CENTER);
 
-        // Frame around boards (don’t stretch; keep preferred size)
         StackPane frame = new StackPane(row);
         frame.getStyleClass().add("board-frame");
         frame.setPadding(new Insets(8));
         StackPane.setAlignment(row, Pos.CENTER);
         frame.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
 
-        // Compact content (frame + back). Keep it non-stretching.
         VBox content = new VBox(12, frame, backBar);
         content.setAlignment(Pos.CENTER);
         content.setFillWidth(false);
         content.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
 
-        // Put content into *this* StackPane and center it.
         getChildren().setAll(content);
         StackPane.setAlignment(content, Pos.CENTER);
 
-        // Keyboard focus
         setFocusTraversable(true);
         setOnKeyPressed(this::onKey);
 
-        // Prime sides with shared 7-bag
         for (Side s : sides) {
             s.nextPiece = pieceBag.next();
             spawnActivePiece(s);
             drawNextPreview(s);
         }
 
-        // Scale when THIS node resizes (works regardless of scene/root)
         widthProperty().addListener((o, ov, nv) -> applyScaling());
         heightProperty().addListener((o, ov, nv) -> applyScaling());
         applyScaling();
@@ -328,6 +322,92 @@ public class GameView extends AbstractScreen {
         S.pauseOverlay.setText("Game Over\nESC to Main Menu\nR to Restart");
         S.pauseOverlay.setVisible(true);
         if (GameConfig.get().isSfxEnabled()) Sound.playGameOver();
+
+        // Stop the loop once any side is game over to avoid re-entrancy.
+        loop.stop();
+
+        // Queue high score prompt safely (next pulse).
+        queueHighScorePrompt(S);
+    }
+
+    /** Schedule a safe, non-blocking high-score prompt. */
+    private void queueHighScorePrompt(Side S) {
+        if (S.scoreSaved) return;                 // already handled
+        if (!qualifiesForHighScore(S.score)) return;
+
+        Platform.runLater(() -> {
+            if (S.scoreSaved) return;             // double-check after defer
+
+            TextInputDialog dlg = new TextInputDialog();
+            dlg.setTitle("New High Score!");
+            dlg.setHeaderText("Player " + S.id + " scored " + S.score + " points.\n"
+                    + "Enter a name (max 5 letters/numbers):");
+            dlg.setContentText("Name:");
+
+            // live sanitize: A–Z / 0–9, max 5, uppercase
+            var tf = dlg.getEditor();
+            tf.setPromptText("AAA");
+            tf.textProperty().addListener((obs, oldV, newV) -> {
+                String cleaned = (newV == null ? "" : newV.replaceAll("[^A-Za-z0-9]", ""))
+                        .toUpperCase(Locale.ROOT);
+                if (cleaned.length() > 5) cleaned = cleaned.substring(0, 5);
+                if (!cleaned.equals(newV)) tf.setText(cleaned);
+            });
+
+            // Save on close (OK or close with text)
+            dlg.setOnHidden(ev -> {
+                String name = tf.getText();
+                if (name == null) name = "";
+                name = name.replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
+                if (name.isEmpty()) name = "PLAYER";
+                if (name.length() > 5) name = name.substring(0, 5);
+                HighScoreStore.addScore(name, S.score);
+                S.scoreSaved = true;
+            });
+
+            dlg.show(); // non-blocking, safe during/after animations
+        });
+    }
+
+
+    /* High score prompt + save */
+    private void maybePromptHighScore(Side S) {
+        if (S.scoreSaved) return; // already handled
+        boolean qualifies = qualifiesForHighScore(S.score);
+        if (!qualifies) return;
+
+        // Build dialog
+        TextInputDialog dlg = new TextInputDialog();
+        dlg.setTitle("New High Score!");
+        dlg.setHeaderText("Player " + S.id + " scored " + S.score + " points.\n" +
+                "Enter a name (max 5 letters/numbers):");
+        dlg.setContentText("Name:");
+
+        // Enforce uppercase A-Z / 0-9 and max length 5 (live)
+        var tf = dlg.getEditor();
+        tf.setPromptText("AAA");
+        tf.textProperty().addListener((obs, oldV, newV) -> {
+            String cleaned = newV == null ? "" : newV.replaceAll("[^A-Za-z0-9]", "");
+            cleaned = cleaned.toUpperCase(Locale.ROOT);
+            if (cleaned.length() > 5) cleaned = cleaned.substring(0, 5);
+            if (!cleaned.equals(newV)) tf.setText(cleaned);
+        });
+
+        var result = dlg.showAndWait();
+        if (result.isPresent()) {
+            String name = result.get().trim().replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
+            if (name.isEmpty()) name = "PLAYER";
+            if (name.length() > 5) name = name.substring(0, 5);
+            HighScoreStore.addScore(name, S.score); // will sort & persist top 10
+            S.scoreSaved = true;
+        }
+    }
+
+    private boolean qualifiesForHighScore(int score) {
+        var list = HighScoreStore.load(); // sorted desc as per our store
+        if (list.size() < 10) return true;
+        int lastScore = list.getLast().score;
+        return score > lastScore;
     }
 
     /* Input handling */
@@ -457,7 +537,7 @@ public class GameView extends AbstractScreen {
         S.boardLayer.getChildren().setAll(S.gridLayer);
 
         S.score = 0; S.lines = 0;
-        S.paused = false; S.gameOver = false;
+        S.paused = false; S.gameOver = false; S.scoreSaved = false;
         S.pauseOverlay.setText("Game Paused (" + (S.id == 1 ? "P" : "L") + ")\nESC to Main Menu\nR to Restart");
         S.pauseOverlay.setVisible(false);
 

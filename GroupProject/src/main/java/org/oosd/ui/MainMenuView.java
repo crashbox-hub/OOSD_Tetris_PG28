@@ -90,20 +90,19 @@ public class MainMenuView extends AbstractScreen {
         setFocusTraversable(true);
     }
 
-    @Override
-    public void onShow() {
+    @Override public void onShow() {
         requestFocus();
 
-        // Honor the last saved setting
-        GameConfig cfg = GameConfig.get();
-        SettingsStore.loadInto(cfg);
+        // Make sure highscores.json exists so it shows up in the folder immediately.
+        org.oosd.core.HighScoreStore.initIfMissing();
 
-        if (cfg.isMusicEnabled()) {
+        if (org.oosd.core.GameConfig.get().isMusicEnabled()) {
             org.oosd.ui.Sound.startMenuBgm();
         } else {
             org.oosd.ui.Sound.stopBgm();
         }
     }
+
 
     @Override public void onHide() {
         org.oosd.ui.Sound.stopBgm();
