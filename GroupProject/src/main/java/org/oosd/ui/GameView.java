@@ -340,18 +340,17 @@ public class GameView extends AbstractScreen {
 
     /* ---------- High scores (deferred until exit) ---------- */
 
-    /** Returns true if the given score would appear in the top-10. */
+    /* Returns true if the given score would appear in the top-10. */
     private boolean qualifiesForHighScore(int score) {
         // Never allow 0 to qualify
         if (score <= 0) return false;
-
         var list = HighScoreStore.load(); // sorted desc as per our store
         if (list.size() < 10) return true;
-        int lastScore = list.getLast().score;
+        int lastScore = list.getLast().score();
         return score > lastScore;
     }
 
-    /** Run prompts sequentially for all qualifying sides, then exit to menu. */
+    /* Run prompts sequentially for all qualifying sides, then exit to menu. */
     private void handleHighScoresAndExit() {
         // stop animation while dialogs are shown
         loop.stop();

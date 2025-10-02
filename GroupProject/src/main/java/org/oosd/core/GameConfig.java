@@ -48,7 +48,7 @@ public final class GameConfig {
     // Players (1 or 2)
     private int players = DEF_PLAYERS;
 
-    // AI toggle (merged from branch)
+    // AI toggle
     private boolean aiEnabled = DEF_AI;
 
     private GameConfig() { }
@@ -64,7 +64,7 @@ public final class GameConfig {
     public boolean isMusicEnabled()   { return musicEnabled; }
     public boolean isSfxEnabled()     { return sfxEnabled; }
     public int players()              { return players; }
-    public boolean isAiEnabled()      { return aiEnabled; }  // new
+    public boolean isAiEnabled()      { return aiEnabled; }
 
     /* ---------------- Setters (with clamping) ---------------- */
 
@@ -94,7 +94,7 @@ public final class GameConfig {
         spawnCol = clamp(spawnCol, 0, Math.max(0, cols - 1));
     }
 
-    /** Enable/disable AI play (merged). */
+    /** Enable/disable AI play */
     public void setAiEnabled(boolean enabled) {
         aiEnabled = enabled;
     }

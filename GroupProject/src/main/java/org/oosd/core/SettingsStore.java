@@ -44,7 +44,7 @@ public final class SettingsStore {
     /* ---------- JSON (very small, schema-fixed) ---------- */
 
     private static String toJson(GameConfig c) {
-        // Pretty but simple JSON that our regex reader understands.
+        // Pretty JSON that our regex reader understands.
         return "{\n" +
                 "  \"rows\": "          + c.rows()           + ",\n" +
                 "  \"cols\": "          + c.cols()           + ",\n" +
@@ -53,7 +53,8 @@ public final class SettingsStore {
                 "  \"spawnCol\": "      + c.spawnCol()       + ",\n" +
                 "  \"musicEnabled\": "  + c.isMusicEnabled() + ",\n" +
                 "  \"sfxEnabled\": "    + c.isSfxEnabled()   + ",\n" +
-                "  \"players\": "       + c.players()        + "\n" +
+                "  \"players\": "       + c.players()        + ",\n" +
+                "  \"aiEnabled\": "     + c.isAiEnabled()    + "\n" +
                 "}\n";
     }
 
@@ -66,6 +67,7 @@ public final class SettingsStore {
         c.setMusicEnabled (readBoolean(json, "musicEnabled",  c.isMusicEnabled()));
         c.setSfxEnabled   (readBoolean(json, "sfxEnabled",    c.isSfxEnabled()));
         c.setPlayers      (readInt    (json, "players",       c.players()));
+        c.setAiEnabled    (readBoolean(json, "aiEnabled",     c.isAiEnabled())); // <-- NEW (defaults if missing)
     }
 
     /* ---------- tiny helpers ---------- */

@@ -36,9 +36,7 @@ public final class HighScoreStore {
         }
     }
 
-    /**
-     * Represents a single entry
-     */
+    /* Represents a single entry */
         public record Entry(String name, int score) {
     }
 

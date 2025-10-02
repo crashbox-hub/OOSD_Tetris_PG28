@@ -128,7 +128,7 @@ public class ConfigurationView extends AbstractScreen {
         // --- AI Play toggle (merged from branch) ---
         row = addToggleRow(grid, row, "AI Play (On/Off):", cfg.isAiEnabled(), isSel -> {
             cfg.setAiEnabled(isSel);
-            SettingsStore.save(cfg); // persists if SettingsStore handles aiEnabled
+            SettingsStore.save(cfg);
         });
 
         // Placeholder
