@@ -6,8 +6,11 @@ import javafx.geometry.Pos;
 import javafx.scene.Group;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.TextInputDialog;
+import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
@@ -17,443 +20,464 @@ import javafx.scene.text.FontWeight;
 
 import org.oosd.core.AbstractScreen;
 import org.oosd.core.GameConfig;
+import org.oosd.core.HighScoreStore;
 import org.oosd.game.*;
-
 import org.oosd.ui.sprites.PieceSprite;
 import org.oosd.ui.sprites.Sprite;
 import org.oosd.ui.sprites.SpriteFactory;
 
 import java.util.*;
 
-/**
- * GameView (entity/sprite version) with "Next" preview + flying +N message on line clears.
- * - Piece-aware spawn check (only game-over if the actual next piece cannot fit).
- * - Queue of next piece displayed in a 4x4 preview on the HUD.
- * - Flying message layer shows +N for 3s when lines are cleared.
- */
 public class GameView extends AbstractScreen {
 
-    /* =========================
-       Config-derived sizing
-       ========================= */
-    private final int TILE   = GameConfig.get().tileSize();
-    private final int BOARD_W = Board.COLS * TILE;
-    private final int BOARD_H = Board.ROWS * TILE;
+    /* Config-derived sizing */
+    private final int TILE = GameConfig.get().tileSize();
 
-    /* =========================
-       Core model
-       ========================= */
-    private final Board board = new Board();
+    /* Mode */
+    private final int players;           // 1 or 2
     private final Runnable onExitToMenu;
 
-    // Entities/Sprites
-    private final List<GameEntity> entities = new ArrayList<>();
-    private final List<Sprite<?, ?>> sprites = new ArrayList<>();
+    /* AI toggle (from config) */
+    private final boolean aiEnabled = GameConfig.get().isAiEnabled();
 
-    // Layers
-    private final Group boardLayer = new Group(); // grid + placed + piece sprite(s)
-    private final Group gridLayer  = new Group(); // faint grid (bottom-most)
-    private final Group fxLayer    = new Group(); // transient flying messages (top of board)
+    /* Shared piece generator (7-bag) */
+    private static final class PieceBag {
+        private final Random rng = new Random(System.nanoTime());
+        private final ArrayDeque<Tetromino> bag = new ArrayDeque<>(7);
+        synchronized Tetromino next() { if (bag.isEmpty()) refill(); return bag.removeFirst(); }
+        private void refill() {
+            List<Tetromino> list = new ArrayList<>(List.of(Tetromino.values()));
+            Collections.shuffle(list, rng);
+            bag.addAll(list);
+        }
+    }
+    private final PieceBag pieceBag = new PieceBag();
 
-    // HUD
-    private final Label scoreLabel = new Label("SCORE 0");
-    private final Label linesLabel = new Label("LINES 0");
-    private final Label timeLabel  = new Label("TIME 00:00");
-    private final Label pauseOverlay = new Label();
+    /* Per-player container */
+    private static final class Side {
+        final int id; // 1 or 2
+        final Board board = new Board();
+        final List<GameEntity> entities = new ArrayList<>();
+        final List<Sprite<?, ?>> sprites = new ArrayList<>();
 
-    // "Next" piece preview
-    private final StackPane nextBox = new StackPane(); // fixed 4x4 area
-    private final Group     nextLayer = new Group();   // we redraw shapes here
+        // layers
+        final Group gridLayer  = new Group();
+        final Group boardLayer = new Group();
+        final Group fxLayer    = new Group();
 
-    private Tetromino nextPiece = null;   // queued piece (displayed)
-    private final Random rng = new Random();
+        // HUD
+        final Label scoreLabel = new Label("SCORE 0");
+        final Label linesLabel = new Label("LINES 0");
+        final Label timeLabel  = new Label("TIME 00:00");
+        final Label pauseOverlay = new Label();
 
-    private boolean paused = false;
-    private boolean gameOver = false;
-    private int score = 0;
-    private int lines = 0;
-    private long runStartNanos = 0L;
+        // NEXT preview (per side)
+        final StackPane nextBox = new StackPane();
+        final Group     nextLayer = new Group();
 
-    // queue a spawn to avoid modifying entities during iteration
-    private boolean spawnQueued = false;
+        // board node for scaling
+        StackPane boardSurface;
 
-    //AI
-    private boolean aiEnabled = false;
-    private long aiLastMoveNs = 0L;
-    private long aiLastDropNs = 0L;
-    private long aiLastRotateNs = 0L;
+        // state
+        Tetromino nextPiece = null;
+        boolean paused = false;
+        boolean gameOver = false;
+        boolean scoreSaved = false;   // prevent multiple prompts
+        int score = 0;
+        int lines = 0;
+        long runStartNanos = 0L;
+        boolean spawnQueued = false;
+
+        // AI timing (per-side)
+        long aiLastMoveNs = 0L;
+        long aiLastDropNs = 0L;
+        long aiLastRotateNs = 0L;
+        int  aiDir = 1; // simple left/right alternation
+
+        Side(int id) { this.id = id; }
+    }
+
+    /* AI cadence (nanoseconds) */
     private static final long AI_MOVE_INTERVAL_NS   = 180_000_000L;   // ~0.18s
     private static final long AI_DROP_INTERVAL_NS   = 350_000_000L;   // ~0.35s
     private static final long AI_ROTATE_INTERVAL_NS = 2_000_000_000L; // ~2.0s
+    private static final long AI_DIR_FLIP_INTERVAL_NS = 1_200_000_000L; // ~1.2s
 
-    // remember last target to avoid camping one column
-    private int aiLastTargetCol = Board.COLS / 2;
+    /* Sides (1 or 2) */
+    private final List<Side> sides = new ArrayList<>(2);
 
+    /* Convenience: board pixel size from GameConfig */
+    private int boardW() { return GameConfig.get().cols() * TILE; }
+    private int boardH() { return GameConfig.get().rows() * TILE; }
 
-
-    /* =========================
-       Main loop (FPS independent)
-       ========================= */
+    /* Loop */
     private final AnimationTimer loop = new AnimationTimer() {
         @Override public void handle(long now) {
-            if (!paused) {
-                //AI Control whilst enabled
-                if (aiEnabled) runAI(now);
-
-                // 1) advance entities
-                for (GameEntity e : entities) e.tick(now);
-
-                // 2) cleanup (defer spawn to after loop)
-                removeDeadAndRespawn();
-
-                // ---- perform deferred spawns safely (prevents CME) ----
-                if (spawnQueued && !gameOver) {
-                    spawnQueued = false;
-                    spawnActivePiece();    // will also refresh Next preview
-                }
-
-                // 3) sync piece sprites
-                for (Sprite<?, ?> s : sprites) {
-                    if (s instanceof PieceSprite ps) ps.syncToEntity();
-                }
-
-                // 4) clear rows + score (+ flying message)
-                int cleared = board.clearFullRows();
-                if (cleared > 0) {
-                    lines += cleared;
-                    switch (cleared) {
-                        case 1 -> score += 100;
-                        case 2 -> score += 300;
-                        case 3 -> score += 500;
-                        case 4 -> score += 800;
-                        default -> score += cleared * 100;
-                    }
-                    // play SFX and show flying “+N”
-                    org.oosd.ui.Sound.playLine();
-                    showFlyingMessage("+" + cleared, BOARD_W / 2.0 - TILE, BOARD_H / 2.0);
-                }
-            }
-
-            // 5) redraw placed blocks
-            drawPlacedBlocks();
-
-            // 6) HUD
-            updateHud(now);
+            for (Side s : sides) tickSide(s, now);
         }
     };
 
-    /* =========================
-       ctor / layout
-       ========================= */
-    public GameView(Runnable onExitToMenu) {
-        this.onExitToMenu = onExitToMenu;
-        this.aiEnabled = org.oosd.core.GameConfig.get().aiEnabled();
+    private void tickSide(Side S, long now) {
+        if (!S.paused) {
+            // Lightweight AI: only when enabled and game not over
+            if (aiEnabled && !S.gameOver) runAI(S, now);
 
+            for (GameEntity e : S.entities) e.tick(now);
+            removeDeadAndRespawn(S);
+            if (S.spawnQueued && !S.gameOver) { S.spawnQueued = false; spawnActivePiece(S); }
+            for (Sprite<?, ?> spr : S.sprites) if (spr instanceof PieceSprite ps) ps.syncToEntity();
 
-        // ----- HUD -----
-        var hud = new VBox(16);
-        hud.setAlignment(Pos.TOP_LEFT);
-        hud.getStyleClass().add("hud");
-
-        Label nextTitle = new Label("NEXT");
-        nextTitle.getStyleClass().add("hud-title");
-
-        // Next box: 4x4 tiles area
-        double nbSize = 4 * TILE;
-        nextBox.setMinSize(nbSize, nbSize);
-        nextBox.setPrefSize(nbSize, nbSize);
-        nextBox.setMaxSize(nbSize, nbSize);
-        nextBox.getChildren().add(nextLayer);
-        nextBox.setStyle(
-                "-fx-background-color: rgba(12,18,28,1.0);" +
-                        "-fx-border-color: rgba(255,255,255,0.18);" +
-                        "-fx-border-width: 1;" +
-                        "-fx-background-radius: 6;" +
-                        "-fx-border-radius: 6;"
-        );
-
-        for (Label lbl : new Label[]{scoreLabel, linesLabel, timeLabel}) {
-            lbl.getStyleClass().add("hud-label");
+            int cleared = S.board.clearFullRows();
+            if (cleared > 0) {
+                S.lines += cleared;
+                switch (cleared) {
+                    case 1 -> S.score += 100;
+                    case 2 -> S.score += 300;
+                    case 3 -> S.score += 500;
+                    case 4 -> S.score += 800;
+                    default -> S.score += cleared * 100;
+                }
+                if (GameConfig.get().isSfxEnabled()) Sound.playLine();
+                showFlyingMessage(S, "+" + cleared, boardW() / 2.0 - TILE, boardH() / 2.0);
+            }
         }
-        hud.getChildren().addAll(nextTitle, nextBox, scoreLabel, linesLabel, timeLabel);
+        drawPlacedBlocks(S);
+        updateHud(S, now);
+    }
 
-        // ----- Board surface + grid -----
-        buildGrid(gridLayer);
-        boardLayer.getChildren().add(gridLayer);
+    /* ctor / layout */
+    public GameView(Runnable onExitToMenu) {
+        this(onExitToMenu, GameConfig.get().players());
+    }
 
-        // Stack the board, fx messages, then add pause overlay as another child
-        StackPane boardSurface = new StackPane(boardLayer, fxLayer);
-        boardSurface.getStyleClass().add("board-surface");
-        boardSurface.setMinSize(BOARD_W, BOARD_H);
-        boardSurface.setPrefSize(BOARD_W, BOARD_H);
-        boardSurface.setMaxSize(BOARD_W, BOARD_H);
+    public GameView(Runnable onExitToMenu, int players) {
+        this.onExitToMenu = onExitToMenu;
+        this.players = (players == 2 ? 2 : 1);
 
-        // Pause / Game Over overlay
-        pauseOverlay.setText("Game Paused (P)\nESC to Main Menu\nR to Restart Game");
-        pauseOverlay.setTextFill(Color.WHITE);
-        pauseOverlay.setFont(Font.font("Arial", FontWeight.BOLD, 20));
-        pauseOverlay.setVisible(false);
-        boardSurface.getChildren().add(pauseOverlay);
-        StackPane.setAlignment(pauseOverlay, Pos.CENTER);
+        getStyleClass().add("app-bg");
+        setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
 
-        // ----- Frame + Back button -----
-        HBox gameRow = new HBox(16, boardSurface, hud);
-        gameRow.getStyleClass().add("game-row");
+        sides.add(new Side(1));
+        if (this.players == 2) sides.add(new Side(2));
 
-        StackPane gameFrame = new StackPane(gameRow);
-        gameFrame.getStyleClass().add("board-frame");
-        gameFrame.setPadding(new Insets(8));
+        HBox row = new HBox(this.players == 1 ? 16 : 24);
+        row.getStyleClass().add("game-row");
+        row.setAlignment(Pos.CENTER);
+        for (Side s : sides) row.getChildren().add(buildSide(s));
 
         Button back = new Button("Back");
         back.getStyleClass().addAll("btn", "btn-ghost");
         back.setOnAction(e -> { if (onExitToMenu != null) onExitToMenu.run(); });
-
         HBox backBar = new HBox(back);
         backBar.getStyleClass().add("center-bar");
+        backBar.setAlignment(Pos.CENTER);
 
-        VBox root = new VBox(12, gameFrame, backBar);
-        root.getStyleClass().add("app-bg");
-        root.setFillWidth(false);
-        getChildren().add(root);
+        StackPane frame = new StackPane(row);
+        frame.getStyleClass().add("board-frame");
+        frame.setPadding(new Insets(8));
+        StackPane.setAlignment(row, Pos.CENTER);
+        frame.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
 
+        VBox content = new VBox(12, frame, backBar);
+        content.setAlignment(Pos.CENTER);
+        content.setFillWidth(false);
+        content.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
+
+        getChildren().setAll(content);
+        StackPane.setAlignment(content, Pos.CENTER);
+
+        // Focus + controls
         setFocusTraversable(true);
         setOnKeyPressed(this::onKey);
 
-        // Prime queue + spawn first active piece
-        nextPiece = randomPiece();
-        spawnActivePiece();          // uses queued piece, then rolls the next
-        drawNextPreview();           // reflect current "next"
+        // Prime pieces
+        for (Side s : sides) {
+            s.nextPiece = pieceBag.next();
+            spawnActivePiece(s);
+            drawNextPreview(s);
+        }
+
+        widthProperty().addListener((o, ov, nv) -> applyScaling());
+        heightProperty().addListener((o, ov, nv) -> applyScaling());
+        applyScaling();
     }
 
-    /* =========================
-       Lifecycle
-       ========================= */
+    private VBox buildSide(Side S) {
+        Label nextTitle = new Label((players == 2 ? ("PLAYER " + S.id + " — ") : "") + "NEXT");
+        nextTitle.getStyleClass().add("hud-title");
+
+        S.nextBox.setMinSize(4 * TILE, 4 * TILE);
+        S.nextBox.setPrefSize(4 * TILE, 4 * TILE);
+        S.nextBox.setMaxSize(4 * TILE, 4 * TILE);
+        S.nextBox.getChildren().add(S.nextLayer);
+        S.nextBox.setStyle(
+                "-fx-background-color: rgba(12,18,28,1.0);" +
+                "-fx-border-color: rgba(255,255,255,0.18);" +
+                "-fx-border-width: 1;" +
+                "-fx-background-radius: 6;" +
+                "-fx-border-radius: 6;"
+        );
+
+        for (Label lbl : new Label[]{S.scoreLabel, S.linesLabel, S.timeLabel})
+            lbl.getStyleClass().add("hud-label");
+
+        VBox hud = new VBox(12, nextTitle, S.nextBox, S.scoreLabel, S.linesLabel, S.timeLabel);
+        hud.setAlignment(Pos.CENTER);
+
+        buildGrid(S.gridLayer);
+        S.boardLayer.getChildren().add(S.gridLayer);
+
+        S.boardSurface = new StackPane(S.boardLayer, S.fxLayer);
+        S.boardSurface.getStyleClass().add("board-surface");
+        S.boardSurface.setMinSize(boardW(), boardH());
+        S.boardSurface.setPrefSize(boardW(), boardH());
+        S.boardSurface.setMaxSize(boardW(), boardH());
+
+        S.pauseOverlay.setText("Game Paused (" + (S.id == 1 ? "P" : "L") + ")\nESC to Main Menu\nR to Restart");
+        S.pauseOverlay.setTextFill(Color.WHITE);
+        S.pauseOverlay.setFont(Font.font("Arial", FontWeight.BOLD, 20));
+        S.pauseOverlay.setVisible(false);
+        S.boardSurface.getChildren().add(S.pauseOverlay);
+        StackPane.setAlignment(S.pauseOverlay, Pos.CENTER);
+
+        VBox sideBox = new VBox(10, S.boardSurface, hud);
+        sideBox.setAlignment(Pos.CENTER);
+        return sideBox;
+    }
+
+    /* Scaling / Centering */
+    private void applyScaling() {
+        double containerW = Math.max(1, getWidth());
+        double containerH = Math.max(1, getHeight());
+
+        double gap = (players == 1 ? 16 : 24);
+        double totalBoardsW = players == 1 ? boardW() : (boardW() * 2 + gap);
+        double totalBoardsH = boardH() + 160; // board + rough HUD
+
+        double scaleX = (containerW * 0.92) / totalBoardsW; // margin
+        double scaleY = (containerH * 0.90) / totalBoardsH; // margin
+
+        double s = Math.min(1.0, Math.min(scaleX, scaleY));
+        if (s <= 0) s = 1.0;
+
+        for (Side side : sides) {
+            if (side.boardSurface != null) {
+                side.boardSurface.setScaleX(s);
+                side.boardSurface.setScaleY(s);
+            }
+        }
+    }
+
+    /* Lifecycle */
     @Override public void onShow() {
         requestFocus();
-        runStartNanos = System.nanoTime();
-        org.oosd.ui.Sound.startGameBgm();
+        long now = System.nanoTime();
+        for (Side s : sides) s.runStartNanos = now;
+        if (GameConfig.get().isMusicEnabled()) Sound.startGameBgm();
         loop.start();
     }
+
     @Override public void onHide() {
         loop.stop();
-        org.oosd.ui.Sound.stopBgm();
+        Sound.stopBgm();
     }
 
-    /* =========================
-       Spawning / removal
-       ========================= */
-    private Tetromino randomPiece() {
-        Tetromino[] all = Tetromino.values();
-        return all[rng.nextInt(all.length)];
-    }
+    /* Spawning / removal */
+    private void spawnActivePiece(Side S) {
+        if (S.gameOver) return;
+        if (S.nextPiece == null) S.nextPiece = pieceBag.next();
 
-    /**
-     * Spawn the queued piece (nextPiece) if it fits at row 0; then queue a new next.
-     * Uses a piece-aware game-over check and column clamping by piece width.
-     */
-    private void spawnActivePiece() {
-        if (gameOver) return;
-
-        // safety: if queue somehow empty
-        if (nextPiece == null) nextPiece = randomPiece();
-
-        Tetromino t = nextPiece;
-
-        // Clamp column for the piece width (rotation 0 used for spawn)
+        Tetromino t = S.nextPiece;
         int desiredCol = GameConfig.get().spawnCol();
         int width = pieceWidth(t, 0);
-        int col = Math.max(0, Math.min(desiredCol, Board.COLS - width));
+        int col = Math.max(0, Math.min(desiredCol, GameConfig.get().cols() - width));
 
-        if (!canPlaceAt(t, 0, 0, col)) {
-            triggerGameOver();
+        if (!canPlaceAt(S.board, t, 0, 0, col)) {
+            // game over (no prompt here; we defer to exit)
+            S.gameOver = true;
+            S.paused = true;
+            S.pauseOverlay.setText("Game Over\nESC to Main Menu\nR to Restart");
+            S.pauseOverlay.setVisible(true);
+            if (GameConfig.get().isSfxEnabled()) Sound.playGameOver();
             return;
         }
 
-        // Create entity for the queued piece
-        ActivePieceEntity piece = new ActivePieceEntity(board, t, col);
-        addEntityWithSprite(piece);
+        ActivePieceEntity piece = new ActivePieceEntity(S.board, t, col);
+        addEntityWithSprite(S, piece);
 
-        // Roll the next and refresh preview
-        nextPiece = randomPiece();
-        drawNextPreview();
+        S.nextPiece = pieceBag.next();
+        drawNextPreview(S);
     }
 
-    private void addEntityWithSprite(GameEntity e) {
-        entities.add(e);
+    private void addEntityWithSprite(Side S, GameEntity e) {
+        S.entities.add(e);
         Sprite<?, ?> s = SpriteFactory.create(e);
-        sprites.add(s);
-        boardLayer.getChildren().add(s.getNode());
+        S.sprites.add(s);
+        S.boardLayer.getChildren().add(s.getNode());
     }
 
-    private void removeDeadAndRespawn() {
-        for (Iterator<GameEntity> it = entities.iterator(); it.hasNext();) {
+    private void removeDeadAndRespawn(Side S) {
+        for (Iterator<GameEntity> it = S.entities.iterator(); it.hasNext();) {
             GameEntity e = it.next();
             if (e.isDead()) {
-                // remove entity
                 it.remove();
-
-                // remove matching sprite (if any)
-                Sprite<?, ?> s = findSprite(e);
+                Sprite<?, ?> s = findSprite(S, e);
                 if (s != null) {
-                    sprites.remove(s);
-                    boardLayer.getChildren().remove(s.getNode());
+                    S.sprites.remove(s);
+                    S.boardLayer.getChildren().remove(s.getNode());
                 }
-
-                // don't spawn here; just queue it (spawn happens after loop)
-                if (e.entityType() == EntityType.ACTIVE_PIECE && !gameOver) {
-                    spawnQueued = true;
+                if (e.entityType() == EntityType.ACTIVE_PIECE && !S.gameOver) {
+                    S.spawnQueued = true;
                 }
             }
         }
     }
 
-    private Sprite<?, ?> findSprite(GameEntity e) {
-        for (Sprite<?, ?> s : sprites) if (s.getEntity() == e) return s;
+    private Sprite<?, ?> findSprite(Side S, GameEntity e) {
+        for (Sprite<?, ?> s : S.sprites) if (s.getEntity() == e) return s;
         return null;
     }
 
-    private void triggerGameOver() {
-        gameOver = true;
-        paused = true;
-        pauseOverlay.setText("Game Over\nESC to Main Menu\nR to Restart");
-        pauseOverlay.setVisible(true);
-        org.oosd.ui.Sound.stopBgm(); org.oosd.ui.Sound.playGameOver(); // <-- add this
+    /* ---------- High scores (deferred until exit) ---------- */
+
+    /** Returns true if the given score would appear in the top-10. */
+    private boolean qualifiesForHighScore(int score) {
+        // Never allow 0 to qualify
+        if (score <= 0) return false;
+
+        var list = HighScoreStore.load(); // sorted desc as per our store
+        if (list.size() < 10) return true;
+        int lastScore = list.getLast().score;
+        return score > lastScore;
     }
 
+    /** Run prompts sequentially for all qualifying sides, then exit to menu. */
+    private void handleHighScoresAndExit() {
+        // stop animation while dialogs are shown
+        loop.stop();
 
-    /* =========================
-       Input handling
-       ========================= */
+        for (Side s : sides) {
+            if (!s.scoreSaved && qualifiesForHighScore(s.score)) {
+                promptHighScore(s);
+            }
+        }
+        if (onExitToMenu != null) onExitToMenu.run();
+    }
+
+    /** Blocking prompt used only on exit (safe: loop stopped). */
+    private void promptHighScore(Side S) {
+        TextInputDialog dlg = new TextInputDialog();
+        dlg.setTitle("New High Score!");
+        dlg.setHeaderText("Player " + S.id + " scored " + S.score + " points.\n" +
+                "Enter a name (max 5 letters/numbers):");
+        dlg.setContentText("Name:");
+
+        var tf = dlg.getEditor();
+        tf.setPromptText("AAA");
+        tf.textProperty().addListener((obs, oldV, newV) -> {
+            String cleaned = (newV == null ? "" : newV.replaceAll("[^A-Za-z0-9]", ""))
+                    .toUpperCase(Locale.ROOT);
+            if (cleaned.length() > 5) cleaned = cleaned.substring(0, 5);
+            if (!cleaned.equals(newV)) tf.setText(cleaned);
+        });
+
+        var result = dlg.showAndWait();
+        if (result.isPresent()) {
+            String name = result.get().trim().replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
+            if (name.isEmpty()) name = "PLAYER";
+            if (name.length() > 5) name = name.substring(0, 5);
+            HighScoreStore.addScore(name, S.score);
+            S.scoreSaved = true;
+        }
+    }
+
+    /* Input handling */
     private void onKey(KeyEvent e) {
-        ActivePieceEntity piece = entities.stream()
-                .filter(ge -> ge.entityType() == EntityType.ACTIVE_PIECE)
-                .map(ge -> (ActivePieceEntity) ge)
-                .findFirst().orElse(null);
-
-        switch (e.getCode()) {
-            case LEFT -> {
-                if (!paused && piece != null) {
-                    piece.tryLeft();
-                }
+        if (players == 1) {
+            Side s = sides.getFirst();
+            handleControls(s, e.getCode(), KeyCode.LEFT, KeyCode.RIGHT, KeyCode.UP, KeyCode.DOWN);
+            if (e.getCode() == KeyCode.P && !s.gameOver) togglePause(s);
+            if (e.getCode() == KeyCode.ESCAPE && s.paused) {
+                handleHighScoresAndExit();
             }
-            case RIGHT -> {
-                if (!paused && piece != null) {
-                    piece.tryRight();
-                }
-            }
-            case UP -> {
-                if (!paused && piece != null) {
-                    piece.tryRotateCW();
-                    org.oosd.ui.Sound.playRotate();
-                }
-            }
-            case DOWN -> {
-                if (!paused && piece != null) {
-                    boolean moved = piece.softDropOrLock();
-                }
-            }
-            case P -> {
-                if (!gameOver) {
-                    paused = !paused;
-                    pauseOverlay.setVisible(paused);
-                }
-            }
-            case ESCAPE -> { if (paused && onExitToMenu != null) onExitToMenu.run(); }
-            case R -> { if (paused) restartGame(); }
-            default -> {}
+            if (e.getCode() == KeyCode.R && s.paused) restartSide(s);
+            return;
         }
+
+        Side s1 = sides.get(0);
+        Side s2 = sides.get(1);
+
+        handleControls(s1, e.getCode(), KeyCode.LEFT, KeyCode.RIGHT, KeyCode.UP, KeyCode.DOWN);
+        handleControls(s2, e.getCode(), KeyCode.A,    KeyCode.D,     KeyCode.W,  KeyCode.S);
+
+        if (e.getCode() == KeyCode.P && !s1.gameOver) togglePause(s1);
+        if (e.getCode() == KeyCode.L && !s2.gameOver) togglePause(s2);
+
+        boolean anyPaused = s1.paused || s2.paused;
+        if (e.getCode() == KeyCode.ESCAPE && anyPaused) {
+            handleHighScoresAndExit();
+        }
+        if (e.getCode() == KeyCode.R && anyPaused) { restartSide(s1); restartSide(s2); }
     }
 
-    /*AI:
-     * - Choose the column with the lowest height (tie-break toward center and avoid repeating last target)
-     * - Move horizontally first; only soft-drop when aligned with target column
-     * - Rotate occasionally (optional)
-     */
-    private void runAI(long now) {
-        ActivePieceEntity piece = entities.stream()
+    private void togglePause(Side s) {
+        s.paused = !s.paused;
+        s.pauseOverlay.setVisible(s.paused);
+    }
+
+    private void handleControls(Side S, KeyCode code,
+                                KeyCode left, KeyCode right, KeyCode rot, KeyCode down) {
+        ActivePieceEntity piece = S.entities.stream()
                 .filter(ge -> ge.entityType() == EntityType.ACTIVE_PIECE)
                 .map(ge -> (ActivePieceEntity) ge)
                 .findFirst().orElse(null);
-        if (piece == null || gameOver) return;
 
-        int px = pieceCol(piece);            // <- uses helper below
-        int targetCol = chooseTargetColumn(); // <- uses helper below
-        aiLastTargetCol = targetCol;
+        if (piece == null || S.paused) return;
 
-        // 1) horizontal movement (throttled)
-        if (now - aiLastMoveNs >= AI_MOVE_INTERVAL_NS) {
-            if (px < targetCol)      piece.tryRight();
-            else if (px > targetCol) piece.tryLeft();
-            aiLastMoveNs = now;
+        if (code == left) piece.tryLeft();
+        else if (code == right) piece.tryRight();
+        else if (code == rot)  { piece.tryRotateCW(); if (GameConfig.get().isSfxEnabled()) Sound.playRotate(); }
+        else if (code == down) piece.softDropOrLock();
+    }
+
+    /* --------- Simple per-side AI driver --------- */
+    private void runAI(Side S, long now) {
+        ActivePieceEntity piece = S.entities.stream()
+                .filter(ge -> ge.entityType() == EntityType.ACTIVE_PIECE)
+                .map(ge -> (ActivePieceEntity) ge)
+                .findFirst().orElse(null);
+        if (piece == null) return;
+
+        // Alternate horizontal nudges
+        if (now - S.aiLastMoveNs >= AI_MOVE_INTERVAL_NS) {
+            if (S.aiDir >= 0) piece.tryRight(); else piece.tryLeft();
+            S.aiLastMoveNs = now;
         }
-
-        // 2) drop only when aligned to avoid piling in one spot
-        if (px == targetCol && (now - aiLastDropNs >= AI_DROP_INTERVAL_NS)) {
+        // Periodically drop
+        if (now - S.aiLastDropNs >= AI_DROP_INTERVAL_NS) {
             piece.softDropOrLock();
-            aiLastDropNs = now;
+            S.aiLastDropNs = now;
         }
-
-        // 3) occasional rotate (optional, only when aligned)
-        if (px == targetCol && (now - aiLastRotateNs >= AI_ROTATE_INTERVAL_NS)) {
+        // Occasionally rotate
+        if (now - S.aiLastRotateNs >= AI_ROTATE_INTERVAL_NS) {
             piece.tryRotateCW();
-            org.oosd.ui.Sound.playRotate();
-            aiLastRotateNs = now;
+            if (GameConfig.get().isSfxEnabled()) Sound.playRotate();
+            S.aiLastRotateNs = now;
         }
+        // Flip direction every so often
+        if ((now / AI_DIR_FLIP_INTERVAL_NS) % 2 == 0) S.aiDir = 1; else S.aiDir = -1;
     }
 
-    // Derive the piece's current column. If x() returns pixels, convert to cells using TILE.
-    private int pieceCol(ActivePieceEntity piece) {
-        double x = piece.x(); // if this is already in cells, great; if it's pixels, convert
-        if (x > Board.COLS + 2) x = x / TILE; // heuristic: big numbers are probably pixels
-        return (int) Math.round(x);
-    }
-
-    /** Pick the lowest column; tie-break toward center and avoid repeating last target. */
-    private int chooseTargetColumn() {
-        int[] heights = new int[Board.COLS];
-
-        // compute column heights
-        for (int c = 0; c < Board.COLS; c++) {
-            int h = 0;
-            for (int r = 0; r < Board.ROWS; r++) {
-                if (board.get(r, c) != 0) { h = Board.ROWS - r; break; }
-            }
-            heights[c] = h;
-        }
-
-        // find minimal height
-        int minH = Integer.MAX_VALUE;
-        for (int h : heights) minH = Math.min(minH, h);
-
-        // collect all columns with minimal height
-        java.util.List<Integer> candidates = new java.util.ArrayList<>();
-        for (int c = 0; c < Board.COLS; c++) if (heights[c] == minH) candidates.add(c);
-
-        // tie-break rule 1: prefer nearest to center
-        int center = Board.COLS / 2;
-        candidates.sort(java.util.Comparator.comparingInt(c -> Math.abs(c - center)));
-
-        // tie-break rule 2: avoid repeating the last target if possible
-        for (int c : candidates) if (c != aiLastTargetCol) return c;
-
-        // fallback: first candidate (closest to center)
-        return candidates.get(0);
-    }
-
-
-
-    /* =========================
-       Rendering of placed blocks
-       ========================= */
-    private void drawPlacedBlocks() {
-        boardLayer.getChildren().removeIf(n -> "placed".equals(n.getUserData()));
+    /* Rendering / HUD */
+    private void drawPlacedBlocks(Side S) {
+        S.boardLayer.getChildren().removeIf(n -> "placed".equals(n.getUserData()));
 
         Group placed = new Group();
         placed.setUserData("placed");
 
-        for (int r = 0; r < Board.ROWS; r++) {
-            for (int c = 0; c < Board.COLS; c++) {
-                int v = board.get(r, c);
+        for (int r = 0; r < GameConfig.get().rows(); r++) {
+            for (int c = 0; c < GameConfig.get().cols(); c++) {
+                int v = S.board.get(r, c);
                 if (v != 0) {
                     Rectangle rect = new Rectangle(TILE, TILE);
                     rect.setTranslateX(c * TILE);
@@ -471,155 +495,111 @@ public class GameView extends AbstractScreen {
                 }
             }
         }
+        if (S.boardLayer.getChildren().isEmpty() || S.boardLayer.getChildren().getFirst() != S.gridLayer)
+            S.boardLayer.getChildren().add(0, S.gridLayer);
+        S.boardLayer.getChildren().add(1, placed);
+    }
 
-        if (boardLayer.getChildren().isEmpty() || boardLayer.getChildren().get(0) != gridLayer) {
-            boardLayer.getChildren().add(0, gridLayer);
+    private void drawNextPreview(Side S) {
+        S.nextLayer.getChildren().clear();
+        if (S.nextPiece == null) return;
+
+        int[][] m = S.nextPiece.shape(0);
+        int w = (m.length == 0) ? 0 : m[0].length;
+        int h = m.length;
+
+        int xOff = (4 - w) * TILE / 2;
+        int yOff = (4 - h) * TILE / 2;
+
+        Color fill = colorFor(S.nextPiece.colorId());
+
+        for (int r = 0; r < h; r++) for (int c = 0; c < w; c++) if (m[r][c] != 0) {
+            double x = c * TILE + xOff, y = r * TILE + yOff;
+
+            Rectangle rect = new Rectangle(TILE, TILE);
+            rect.setTranslateX(x);
+            rect.setTranslateY(y);
+            rect.setFill(fill);
+            rect.setArcWidth(6); rect.setArcHeight(6);
+            rect.setStroke(Color.color(0,0,0,0.35));
+
+            Rectangle sheen = new Rectangle(TILE, TILE * 0.25);
+            sheen.setTranslateX(x);
+            sheen.setTranslateY(y);
+            sheen.setFill(Color.color(1,1,1,0.10));
+
+            S.nextLayer.getChildren().addAll(rect, sheen);
         }
-        boardLayer.getChildren().add(1, placed);
     }
 
-    private Color colorFor(int id) {
-        return switch (id) {
-            case 1 -> Color.CYAN;       // I
-            case 2 -> Color.YELLOW;     // O
-            case 3 -> Color.PURPLE;     // T
-            case 4 -> Color.LIMEGREEN;  // S
-            case 5 -> Color.RED;        // Z
-            case 6 -> Color.BLUE;       // J
-            case 7 -> Color.ORANGE;     // L
-            default -> Color.GRAY;
-        };
-    }
-
-    private Color colorFor(Tetromino t) {
-        return colorFor(t.colorId());
-    }
-
-    /* =========================
-       HUD + restart
-       ========================= */
-    private void updateHud(long now) {
-        long elapsedSec = Math.max(0, (now - runStartNanos) / 1_000_000_000L);
+    private void updateHud(Side S, long now) {
+        long elapsedSec = Math.max(0, (now - S.runStartNanos) / 1_000_000_000L);
         long mm = elapsedSec / 60, ss = elapsedSec % 60;
-        timeLabel.setText(String.format("TIME %02d:%02d", mm, ss));
-        scoreLabel.setText("SCORE " + score);
-        linesLabel.setText("LINES " + lines);
+        S.timeLabel.setText(String.format("TIME %02d:%02d", mm, ss));
+        S.scoreLabel.setText("SCORE " + S.score);
+        S.linesLabel.setText("LINES " + S.lines);
     }
 
-    private void restartGame() {
-        for (int r = 0; r < Board.ROWS; r++)
-            for (int c = 0; c < Board.COLS; c++)
-                board.set(r, c, 0);
+    private void restartSide(Side S) {
+        for (int r = 0; r < GameConfig.get().rows(); r++)
+            for (int c = 0; c < GameConfig.get().cols(); c++)
+                S.board.set(r, c, 0);
 
-        entities.clear();
-        sprites.clear();
-        boardLayer.getChildren().setAll(gridLayer);
+        S.entities.clear();
+        S.sprites.clear();
+        S.boardLayer.getChildren().setAll(S.gridLayer);
 
-        score = 0;
-        lines = 0;
-        paused = false;
-        gameOver = false;
-        pauseOverlay.setText("Game Paused (P)\nESC to Main Menu\nR to Restart Game");
-        pauseOverlay.setVisible(false);
+        S.score = 0; S.lines = 0;
+        S.paused = false; S.gameOver = false; S.scoreSaved = false;
+        S.pauseOverlay.setText("Game Paused (" + (S.id == 1 ? "P" : "L") + ")\nESC to Main Menu\nR to Restart");
+        S.pauseOverlay.setVisible(false);
 
-        runStartNanos = System.nanoTime();
+        S.runStartNanos = System.nanoTime();
 
-        // reset queue and spawn
-        nextPiece = randomPiece();
-        spawnActivePiece();
-        drawNextPreview();
+        S.nextPiece = pieceBag.next();
+        spawnActivePiece(S);
+        drawNextPreview(S);
 
         requestFocus();
+        applyScaling();
     }
 
-    /* =========================
-       Helpers (spawn + next)
-       ========================= */
-
-    /** width in cells of the given rotation matrix (assumes rectangular) */
+    /* Helpers */
     private int pieceWidth(Tetromino t, int rot) {
         int[][] m = t.shape(rot);
         return (m.length == 0) ? 0 : m[0].length;
     }
 
-    /** Can the given piece/rotation be placed at board row/col? */
-    private boolean canPlaceAt(Tetromino t, int rot, int row, int col) {
+    private boolean canPlaceAt(Board board, Tetromino t, int rot, int row, int col) {
         int[][] m = t.shape(rot);
         for (int r = 0; r < m.length; r++) {
-            for (int c = 0; c < m[r].length; c++) {
-                if (m[r][c] != 0) {
-                    int br = row + r, bc = col + c;
-                    if (br < 0 || br >= Board.ROWS || bc < 0 || bc >= Board.COLS) return false;
-                    if (board.get(br, bc) != 0) return false;
-                }
+            for (int c = 0; c < m[r].length; c++) if (m[r][c] != 0) {
+                int br = row + r, bc = col + c;
+                if (br < 0 || br >= GameConfig.get().rows() || bc < 0 || bc >= GameConfig.get().cols()) return false;
+                if (board.get(br, bc) != 0) return false;
             }
         }
         return true;
     }
 
-    /** Draw the queued next piece centered in the 4x4 preview box. */
-    private void drawNextPreview() {
-        nextLayer.getChildren().clear();
-        if (nextPiece == null) return;
-
-        int[][] m = nextPiece.shape(0);
-        int w = (m.length == 0) ? 0 : m[0].length;
-        int h = m.length;
-
-        // center within 4x4
-        int xOff = (4 - w) * TILE / 2;
-        int yOff = (4 - h) * TILE / 2;
-
-        Color fill = colorFor(nextPiece);
-
-        for (int r = 0; r < h; r++) {
-            for (int c = 0; c < w; c++) {
-                if (m[r][c] != 0) {
-                    double x = c * TILE + xOff;
-                    double y = r * TILE + yOff;
-
-                    Rectangle rect = new Rectangle(TILE, TILE);
-                    rect.setTranslateX(x);
-                    rect.setTranslateY(y);
-                    rect.setFill(fill);
-                    rect.setArcWidth(6); rect.setArcHeight(6);
-                    rect.setStroke(Color.color(0,0,0,0.35));
-
-                    Rectangle sheen = new Rectangle(TILE, TILE * 0.25);
-                    sheen.setTranslateX(x);
-                    sheen.setTranslateY(y);
-                    sheen.setFill(Color.color(1,1,1,0.10));
-
-                    nextLayer.getChildren().addAll(rect, sheen);
-                }
-            }
-        }
-    }
-
-    /** Build faint grid lines once. */
     private void buildGrid(Group into) {
         into.getChildren().clear();
         Color gridColor = Color.color(1,1,1,0.10);
-        for (int x = 0; x <= Board.COLS; x++) {
-            var line = new javafx.scene.shape.Line(x * TILE, 0, x * TILE, BOARD_H);
+        for (int x = 0; x <= GameConfig.get().cols(); x++) {
+            var line = new javafx.scene.shape.Line(x * TILE, 0, x * TILE, boardH());
             line.setStroke(gridColor);
             into.getChildren().add(line);
         }
-        for (int y = 0; y <= Board.ROWS; y++) {
-            var line = new javafx.scene.shape.Line(0, y * TILE, BOARD_W, y * TILE);
+        for (int y = 0; y <= GameConfig.get().rows(); y++) {
+            var line = new javafx.scene.shape.Line(0, y * TILE, boardW(), y * TILE);
             line.setStroke(gridColor);
             into.getChildren().add(line);
         }
     }
 
-    /* =========================
-       Flying message helper
-       ========================= */
-    private void showFlyingMessage(String text, double startX, double startY) {
+    private void showFlyingMessage(Side S, String text, double startX, double startY) {
         Label msg = new Label(text);
-        // color by number of lines for a tiny bit of flair
         Color fill = switch (text) {
-            case "+1" -> Color.LIMEGREEN;
             case "+2" -> Color.AQUA;
             case "+3" -> Color.ORCHID;
             case "+4" -> Color.GOLD;
@@ -630,9 +610,8 @@ public class GameView extends AbstractScreen {
         msg.setTranslateX(startX);
         msg.setTranslateY(startY);
 
-        fxLayer.getChildren().add(msg);
+        S.fxLayer.getChildren().add(msg);
 
-        // 3s upward drift + fade
         var move = new javafx.animation.TranslateTransition(javafx.util.Duration.seconds(3), msg);
         move.setByY(-50);
 
@@ -641,8 +620,20 @@ public class GameView extends AbstractScreen {
         fade.setToValue(0.0);
 
         var anim = new javafx.animation.ParallelTransition(move, fade);
-        anim.setOnFinished(e -> fxLayer.getChildren().remove(msg));
+        anim.setOnFinished(e -> S.fxLayer.getChildren().remove(msg));
         anim.play();
     }
-}
 
+    private Color colorFor(int id) {
+        return switch (id) {
+            case 1 -> Color.CYAN;
+            case 2 -> Color.YELLOW;
+            case 3 -> Color.PURPLE;
+            case 4 -> Color.LIMEGREEN;
+            case 5 -> Color.RED;
+            case 6 -> Color.BLUE;
+            case 7 -> Color.ORANGE;
+            default -> Color.GRAY;
+        };
+    }
+}

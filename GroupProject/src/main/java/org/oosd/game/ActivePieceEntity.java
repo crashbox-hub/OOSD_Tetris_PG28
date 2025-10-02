@@ -2,10 +2,10 @@ package org.oosd.game;
 
 import java.util.Random;
 
-/**
- * Falling piece driven by dt-based gravity.
- * - When a downward step is blocked, the piece locks to the board and marks itself dead.
- * - Exposes softDropOrLock() so UI can do a single-step soft drop safely.
+/*
+Falling piece driven by dt-based gravity.
+  - When a downward step is blocked, the piece locks to the board and marks itself dead.
+  - Exposes softDropOrLock() so UI can do a single-step soft drop safely.
  */
 public class ActivePieceEntity extends GameEntity {
     private final Board board;
@@ -48,9 +48,8 @@ public class ActivePieceEntity extends GameEntity {
     public boolean tryLeft()      { return tryMove(0, -1, 0); }
     public boolean tryRight()     { return tryMove(0, +1, 0); }
 
-    /**
-     * One-cell soft drop. If blocked, locks to board and marks dead.
-     * @return true if moved down, false if locked.
+    /* One-cell soft drop. If blocked, locks to board and marks dead.
+        @return true if moved down, false if locked.
      */
     public boolean softDropOrLock() {
         if (tryMove(1, 0, 0)) return true;

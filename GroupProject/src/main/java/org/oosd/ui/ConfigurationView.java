@@ -5,24 +5,31 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
+
 import org.oosd.core.AbstractScreen;
+import org.oosd.core.GameConfig;
+import org.oosd.core.SettingsStore;
 
 public class ConfigurationView extends AbstractScreen {
 
     public ConfigurationView(Runnable onBack) {
+        // Load JSON so UI reflects persisted settings
+        GameConfig cfg = GameConfig.get();
+        SettingsStore.loadInto(cfg);
+
         // Root background container
         StackPane bg = new StackPane();
-        bg.getStyleClass().add("app-bg"); // gradient + padding
+        bg.getStyleClass().add("app-bg");
 
         // Inner panel (card)
         VBox panel = new VBox(16);
-        panel.getStyleClass().add("panel");     // gradient, radius, border, shadow
+        panel.getStyleClass().add("panel");
         panel.setAlignment(Pos.TOP_CENTER);
         panel.setPadding(new Insets(20));
 
         // Title
         Label title = new Label("Configuration");
-        title.getStyleClass().add("title");     // big, bold, glow
+        title.getStyleClass().add("title");
 
         // Controls grid
         GridPane grid = new GridPane();
@@ -41,53 +48,91 @@ public class ConfigurationView extends AbstractScreen {
 
         int row = 0;
 
-        // Width 6..13
+        // --- Width (6..30) ---
         Label widthLbl = label("Field Width (No of cells):");
-        Slider width = slider(6, 13, 10);
+        Slider width = slider(6, 30, cfg.cols());
         Label widthVal = valueLabel(width);
+        width.valueProperty().addListener((obs, o, n) -> {
+            int v = n.intValue();
+            cfg.setCols(v);
+            SettingsStore.save(cfg);
+        });
         grid.add(widthLbl, 0, row); grid.add(width, 1, row);
         grid.add(widthVal, 2, row++); GridPane.setHalignment(widthVal, HPos.RIGHT);
 
-        // Height 15..20
+        // --- Height (15..30) ---
         Label heightLbl = label("Field Height (No of cells):");
-        Slider height = slider(15, 20, 20);
+        Slider height = slider(15, 30, cfg.rows());
         Label heightVal = valueLabel(height);
+        height.valueProperty().addListener((obs, o, n) -> {
+            int v = n.intValue();
+            cfg.setRows(v);
+            SettingsStore.save(cfg);
+        });
         grid.add(heightLbl, 0, row); grid.add(height, 1, row);
         grid.add(heightVal, 2, row++); GridPane.setHalignment(heightVal, HPos.RIGHT);
 
-        // Level 1..10
+        // --- Game Level (maps to gravityCps) ---
         Label levelLbl = label("Game Level:");
-        Slider level = slider(1, 10, 1);
+        int levelInitial = levelFromGravity(cfg.gravityCps()); // derive from saved gravity
+        Slider level = slider(1, 10, levelInitial);
         Label levelVal = valueLabel(level);
-        grid.add(levelLbl, 0, row); grid.add(level, 1, row);
+        level.valueProperty().addListener((obs, o, n) -> {
+            int v = n.intValue();
+            cfg.setGravityCps(gravityFromLevel(v));
+            SettingsStore.save(cfg);
+        });
+        HBox levelBox = new HBox(10, level);
+        levelBox.setAlignment(Pos.CENTER_LEFT);
+        grid.add(levelLbl, 0, row); grid.add(levelBox, 1, row);
         grid.add(levelVal, 2, row++); GridPane.setHalignment(levelVal, HPos.RIGHT);
 
-        // Toggles
-        row = addToggleRow(grid, row, "Music (On/Off):", true);
-        row = addToggleRow(grid, row, "Sound Effect (On/Off):", true);
-        {
-            Label lbl = label("AI Play (On/Off):");
-            CheckBox cb = new CheckBox();
-            cb.getStyleClass().add("config-checkbox");
-            cb.setSelected(false);
+        // --- Players: 1 or 2 ---
+        Label playersLbl = label("Players:");
+        ToggleGroup playersGroup = new ToggleGroup();
+        RadioButton oneP = new RadioButton("1 Player");
+        RadioButton twoP = new RadioButton("2 Players");
+        oneP.setToggleGroup(playersGroup);
+        twoP.setToggleGroup(playersGroup);
+        if (cfg.players() == 2) twoP.setSelected(true); else oneP.setSelected(true);
 
-            Label state = new Label("Off");
-            state.getStyleClass().add("state-off");
-            cb.selectedProperty().addListener((obs, was, isSel) -> {
-                state.setText(isSel ? "On" : "Off");
-                state.getStyleClass().removeAll("state-on", "state-off");
-                state.getStyleClass().add(isSel ? "state-on" : "state-off");
-                org.oosd.core.GameConfig.get().setAiEnabled(isSel);
-            });
+        HBox playersBox = new HBox(12, oneP, twoP);
+        playersBox.setAlignment(Pos.CENTER_LEFT);
 
-            grid.add(lbl, 0, row);
-            grid.add(cb, 1, row);
-            grid.add(state, 2, row);
-            GridPane.setHalignment(state, HPos.RIGHT);
-            row++;
-        }
+        Label playersState = new Label(cfg.players() == 2 ? "2P" : "1P");
+        playersState.getStyleClass().add("value-label");
 
-        row = addToggleRow(grid, row, "Extend Mode (On/Off):", false);
+        playersGroup.selectedToggleProperty().addListener((obs, oldT, newT) -> {
+            int p = (newT == twoP) ? 2 : 1;
+            cfg.setPlayers(p);
+            playersState.setText(p == 2 ? "2P" : "1P");
+            SettingsStore.save(cfg);
+        });
+        grid.add(playersLbl, 0, row);
+        grid.add(playersBox, 1, row);
+        grid.add(playersState, 2, row++); GridPane.setHalignment(playersState, HPos.RIGHT);
+
+        // --- Music toggle ---
+        row = addToggleRow(grid, row, "Music (On/Off):", cfg.isMusicEnabled(), isSel -> {
+            cfg.setMusicEnabled(isSel);
+            SettingsStore.save(cfg);
+            if (isSel) Sound.startMenuBgm(); else Sound.stopBgm();
+        });
+
+        // --- SFX toggle ---
+        row = addToggleRow(grid, row, "Sound Effects (On/Off):", cfg.isSfxEnabled(), isSel -> {
+            cfg.setSfxEnabled(isSel);
+            SettingsStore.save(cfg);
+        });
+
+        // --- AI Play toggle (merged from branch) ---
+        row = addToggleRow(grid, row, "AI Play (On/Off):", cfg.isAiEnabled(), isSel -> {
+            cfg.setAiEnabled(isSel);
+            SettingsStore.save(cfg); // persists if SettingsStore handles aiEnabled
+        });
+
+        // Placeholder
+        row = addToggleRow(grid, row, "Extend Mode (On/Off):", false, isSel -> {});
 
         // Back button + footer
         Button back = new Button("Back");
@@ -107,7 +152,7 @@ public class ConfigurationView extends AbstractScreen {
         getChildren().add(bg);
     }
 
-    /* ---------- helpers (logic only; no inline CSS) ---------- */
+    /* ---------- helpers ---------- */
 
     private Label label(String text) {
         Label l = new Label(text);
@@ -134,19 +179,21 @@ public class ConfigurationView extends AbstractScreen {
         return l;
     }
 
-    private int addToggleRow(GridPane grid, int row, String labelText, boolean initial) {
+    private int addToggleRow(GridPane grid, int row, String labelText, boolean initial,
+                             java.util.function.Consumer<Boolean> onToggle) {
         Label lbl = label(labelText);
-
         CheckBox cb = new CheckBox();
         cb.getStyleClass().add("config-checkbox");
         cb.setSelected(initial);
 
         Label state = new Label(initial ? "On" : "Off");
         state.getStyleClass().add(initial ? "state-on" : "state-off");
+
         cb.selectedProperty().addListener((obs, was, isSel) -> {
             state.setText(isSel ? "On" : "Off");
             state.getStyleClass().removeAll("state-on", "state-off");
             state.getStyleClass().add(isSel ? "state-on" : "state-off");
+            if (onToggle != null) onToggle.accept(isSel);
         });
 
         grid.add(lbl, 0, row);
@@ -156,6 +203,23 @@ public class ConfigurationView extends AbstractScreen {
         return row + 1;
     }
 
-    @Override public void onShow() { requestFocus(); }
+    // ---- Level/Gravity mapping ----
+    private static double gravityFromLevel(int level) {
+        int lvl = Math.max(1, Math.min(10, level));
+        return 1.8 + 0.25 * (lvl - 1);
+    }
+
+    private static int levelFromGravity(double cps) {
+        // invert mapping and clamp to 1..10
+        int lvl = (int)Math.round(((cps - 1.8) / 0.25) + 1.0);
+        return Math.max(1, Math.min(10, lvl));
+    }
+
+    @Override public void onShow() {
+        requestFocus();
+        if (GameConfig.get().isMusicEnabled()) Sound.startMenuBgm();
+        else Sound.stopBgm();
+    }
+
     @Override public void onHide() { }
 }
