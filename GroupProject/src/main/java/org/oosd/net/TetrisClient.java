@@ -16,7 +16,7 @@ public class TetrisClient {
 
     private final ObjectMapper mapper = new ObjectMapper();
 
-    /** Sends the PureGame to the server and returns the optimal move. Opens and closes the socket each call. */
+    /* Sends the PureGame to the server and returns the optimal move. Opens and closes the socket each call. */
     public OpMove requestMove(PureGame game) throws IOException {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(HOST, PORT), (int) CONNECT_TIMEOUT.toMillis());
