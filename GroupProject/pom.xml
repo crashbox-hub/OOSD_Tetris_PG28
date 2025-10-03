@@ -15,8 +15,9 @@
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <!-- JavaFX version -->
+        <!-- Library versions -->
         <javafx.version>21</javafx.version>
+        <jackson.version>2.17.1</jackson.version>
     </properties>
 
     <dependencies>
@@ -33,11 +34,19 @@
             <artifactId>javafx-media</artifactId>
             <version>${javafx.version}</version>
         </dependency>
+
+        <!-- Jackson (JSON serialization for server communication) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.17.1</version>
+        </dependency>
+
     </dependencies>
 
     <build>
         <plugins>
-            <!-- JavaFX Maven plugin -->
+            <!-- JavaFX Maven plugin (runs app and resolves platform-specific JavaFX bits) -->
             <plugin>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
@@ -51,7 +60,7 @@
                 </configuration>
             </plugin>
 
-            <!-- Build runnable JAR -->
+            <!-- Build runnable JAR (manifest points to your Main) -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
