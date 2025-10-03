@@ -26,8 +26,10 @@ public final class GameConfig {
     private static final boolean DEF_MUSIC    = true;
     private static final boolean DEF_SFX      = true;
     private static final int    DEF_PLAYERS   = 1;     // 1 or 2
-    private static final boolean DEF_AI_P1    = false; // new
-    private static final boolean DEF_AI_P2    = false; // new
+    private static final boolean DEF_AI_P1    = false;
+    private static final boolean DEF_AI_P2    = false;
+    private static final boolean DEF_EXTEND_MODE = false;
+
 
     /* ---------------- Instance state ---------------- */
 
@@ -52,6 +54,9 @@ public final class GameConfig {
     // Controller type per player (true = AI, false = Human)
     private boolean aiP1Enabled = DEF_AI_P1;
     private boolean aiP2Enabled = DEF_AI_P2;
+
+    private boolean extendModeEnabled = DEF_EXTEND_MODE;
+
 
     private GameConfig() { }
 
@@ -105,16 +110,36 @@ public final class GameConfig {
     public void setAiP1Enabled(boolean v)  { aiP1Enabled = v; }
     public void setAiP2Enabled(boolean v)  { aiP2Enabled = v; }
 
+    //Extend Mode setter.
+    public void setExtendModeEnabled() {
+        // Extend Mode flag
+        rows = clamp(rows, currentMinRows(), currentMaxRows());
+        cols = clamp(cols, currentMinCols(), currentMaxCols());
+        spawnCol = clamp(spawnCol, 0, Math.max(0, cols - 1));
+    }
+
     /* ---------------- Helpers ---------------- */
 
-    private int currentMinCols() { return (players == 2) ? MIN_COLS_2P : MIN_COLS_1P; }
-    private int currentMaxCols() { return (players == 2) ? MAX_COLS_2P : MAX_COLS_1P; }
-    private int currentMinRows() { return (players == 2) ? MIN_ROWS_2P : MIN_ROWS_1P; }
-    private int currentMaxRows() { return (players == 2) ? MAX_ROWS_2P : MAX_ROWS_1P; }
+    private int currentMinCols() {
+        // If Extend Mode should affect limits in the future, adjust here.
+        return (players == 2) ? MIN_COLS_2P : MIN_COLS_1P;
+    }
+    private int currentMaxCols() {
+        return (players == 2) ? MAX_COLS_2P : MAX_COLS_1P;
+    }
+    private int currentMinRows() {
+        return (players == 2) ? MIN_ROWS_2P : MIN_ROWS_1P;
+    }
+    private int currentMaxRows() {
+        return (players == 2) ? MAX_ROWS_2P : MAX_ROWS_1P;
+    }
 
     private static int clamp(int v, int lo, int hi) {
         return (v < lo) ? lo : Math.min(v, hi);
     }
 
-
+    // getter/setter extend mode
+    public boolean isExtendModeEnabled() { return extendModeEnabled; }
+    public void setExtendModeEnabled(boolean enabled) { extendModeEnabled = enabled; }
 }
+

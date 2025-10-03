@@ -137,8 +137,13 @@ public class ConfigurationView extends AbstractScreen {
         });
 
 
-        // Placeholder
-        row = addToggleRow(grid, row, "Extend Mode (On/Off):", false, isSel -> {});
+        // Extend Mode toggle (persisted)
+        row = addToggleRow(grid, row, "Extend Mode (On/Off):", cfg.isExtendModeEnabled(), isSel -> {
+            cfg.setExtendModeEnabled(isSel);
+            SettingsStore.save(cfg);
+        });
+
+
 
         // Back button + footer
         Button back = new Button("Back");

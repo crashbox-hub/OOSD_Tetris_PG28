@@ -46,28 +46,29 @@ public final class SettingsStore {
     private static String toJson(GameConfig c) {
         // Pretty JSON that our regex reader understands.
         return "{\n" +
-                "  \"rows\": "           + c.rows()            + ",\n" +
-                "  \"cols\": "           + c.cols()            + ",\n" +
-                "  \"tileSize\": "       + c.tileSize()        + ",\n" +
-                "  \"gravityCps\": "     + c.gravityCps()      + ",\n" +
-                "  \"spawnCol\": "       + c.spawnCol()        + ",\n" +
-                "  \"musicEnabled\": "   + c.isMusicEnabled()  + ",\n" +
-                "  \"sfxEnabled\": "     + c.isSfxEnabled()    + ",\n" +
-                "  \"players\": "        + c.players()         + ",\n" +
-                "  \"aiP1Enabled\": "    + c.isAiP1Enabled()   + ",\n" +   // per-player
-                "  \"aiP2Enabled\": "    + c.isAiP2Enabled()   + "\n" +    // per-player
+                "  \"rows\": "                + c.rows()                  + ",\n" +
+                "  \"cols\": "                + c.cols()                  + ",\n" +
+                "  \"tileSize\": "            + c.tileSize()              + ",\n" +
+                "  \"gravityCps\": "          + c.gravityCps()            + ",\n" +
+                "  \"spawnCol\": "            + c.spawnCol()              + ",\n" +
+                "  \"musicEnabled\": "        + c.isMusicEnabled()        + ",\n" +
+                "  \"sfxEnabled\": "          + c.isSfxEnabled()          + ",\n" +
+                "  \"players\": "             + c.players()               + ",\n" +
+                "  \"aiP1Enabled\": "         + c.isAiP1Enabled()         + ",\n" +   // per-player
+                "  \"aiP2Enabled\": "         + c.isAiP2Enabled()         + ",\n" +   // per-player
+                "  \"extendModeEnabled\": "   + c.isExtendModeEnabled()   + "\n" +    // NEW
                 "}\n";
     }
 
     private static void fromJsonInto(String json, GameConfig c) {
-        c.setRows         (readInt    (json, "rows",          c.rows()));
-        c.setCols         (readInt    (json, "cols",          c.cols()));
-        c.setTileSize     (readInt    (json, "tileSize",      c.tileSize()));
-        c.setGravityCps   (readDouble (json, "gravityCps",    c.gravityCps()));
-        c.setSpawnCol     (readInt    (json, "spawnCol",      c.spawnCol()));
-        c.setMusicEnabled (readBoolean(json, "musicEnabled",  c.isMusicEnabled()));
-        c.setSfxEnabled   (readBoolean(json, "sfxEnabled",    c.isSfxEnabled()));
-        c.setPlayers      (readInt    (json, "players",       c.players()));
+        c.setRows         (readInt    (json, "rows",               c.rows()));
+        c.setCols         (readInt    (json, "cols",               c.cols()));
+        c.setTileSize     (readInt    (json, "tileSize",           c.tileSize()));
+        c.setGravityCps   (readDouble (json, "gravityCps",         c.gravityCps()));
+        c.setSpawnCol     (readInt    (json, "spawnCol",           c.spawnCol()));
+        c.setMusicEnabled (readBoolean(json, "musicEnabled",       c.isMusicEnabled()));
+        c.setSfxEnabled   (readBoolean(json, "sfxEnabled",         c.isSfxEnabled()));
+        c.setPlayers      (readInt    (json, "players",            c.players()));
 
         // --- Per-player AI flags (with legacy fallback) ---
         Boolean p1 = readBooleanOrNull(json, "aiP1Enabled");
@@ -81,6 +82,9 @@ public final class SettingsStore {
 
         c.setAiP1Enabled(aiP1);
         c.setAiP2Enabled(aiP2);
+
+        // --- NEW: Extend Mode ---
+        c.setExtendModeEnabled(readBoolean(json, "extendModeEnabled", c.isExtendModeEnabled()));
     }
 
     /* ---------- tiny helpers ---------- */
