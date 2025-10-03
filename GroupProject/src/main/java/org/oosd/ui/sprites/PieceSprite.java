@@ -1,7 +1,6 @@
 package org.oosd.ui.sprites;
 
 import javafx.scene.Group;
-import javafx.scene.Node;
 import javafx.scene.paint.Color;
 import org.oosd.core.GameConfig;
 import org.oosd.game.ActivePieceEntity;
@@ -28,9 +27,9 @@ public class PieceSprite implements Sprite<ActivePieceEntity, Group> {
         int colorId = entity.piece().type().colorId();
         Color fill = colorFor(colorId);
 
-        for (int r = 0; r < m.length; r++) {
-            for (int c = 0; c < m[r].length; c++) {
-                if (m[r][c] != 0) {
+        for (int[] ints : m) {
+            for (int anInt : ints) {
+                if (anInt != 0) {
                     BlockSprite b = new BlockSprite(entity, tile, fill);
                     group.getChildren().add(b.getNode());
                     blocks.add(b);

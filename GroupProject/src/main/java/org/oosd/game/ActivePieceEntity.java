@@ -32,7 +32,7 @@ public class ActivePieceEntity extends GameEntity {
         double gravity = org.oosd.core.GameConfig.get().gravityCps();
         double newY = y + gravity * dt;
 
-        // Each time we cross an integral row boundary, try move down 1 cell.
+        // Each time we cross an integral row boundary, try to move down 1 cell.
         while (Math.floor(newY) > Math.floor(y)) {
             if (!tryMove(1, 0, 0)) {    // cannot go down → lock & die
                 lockToBoard();
@@ -44,9 +44,15 @@ public class ActivePieceEntity extends GameEntity {
     }
 
     /* --------- input helpers ---------- */
-    public boolean tryRotateCW()  { return tryMove(0, 0, +1); }
-    public boolean tryLeft()      { return tryMove(0, -1, 0); }
-    public boolean tryRight()     { return tryMove(0, +1, 0); }
+    public void tryRotateCW()  {
+        tryMove(0, 0, +1);
+    }
+    public void tryLeft()      {
+        tryMove(0, -1, 0);
+    }
+    public void tryRight()     {
+        tryMove(0, +1, 0);
+    }
 
     /* One-cell soft drop. If blocked, locks to board and marks dead.
      * @return true if moved down, false if locked.

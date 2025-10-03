@@ -115,12 +115,25 @@ public class GameView extends AbstractScreen {
     private int boardW() { return GameConfig.get().cols() * TILE; }
     private int boardH() { return GameConfig.get().rows() * TILE; }
 
+    private final AiController aiController = new AiController();
+
     /* Loop */
     private final AnimationTimer loop = new AnimationTimer() {
         @Override public void handle(long now) {
             for (Side s : sides) {
                 //  drive AI before tick when active, unpaused, not game over
-                if (s.ai && !s.paused && !s.gameOver) runAI(s, now);
+                if (s.ai && !s.paused && !s.gameOver) {
+                    aiController.update(
+                            s.id,
+                            s.board,
+                            (ActivePieceEntity) s.entities.stream()
+                                    .filter(ge -> ge.entityType() == EntityType.ACTIVE_PIECE)
+                                    .findFirst().orElse(null),
+                            s.nextPiece,
+                            now,
+                            TILE
+                    );
+                }
                 enforceGravity(s, now);
                 tickSide(s, now);
             }
@@ -306,10 +319,10 @@ public class GameView extends AbstractScreen {
 
         Tetromino t = S.nextPiece;
         int desiredCol = GameConfig.get().spawnCol();
-        int width = pieceWidth(t, 0);
+        int width = pieceWidth(t);
         int col = Math.max(0, Math.min(desiredCol, GameConfig.get().cols() - width));
 
-        if (!canPlaceAt(S.board, t, 0, 0, col)) {
+        if (!canPlaceAt(S.board, t, col)) {
             triggerGameOver(S);
             return;
         }
@@ -625,17 +638,17 @@ public class GameView extends AbstractScreen {
     }
 
     /* Helpers */
-    private int pieceWidth(Tetromino t, int rot) {
-        int[][] m = t.shape(rot);
+    private int pieceWidth(Tetromino t) {
+        int[][] m = t.shape(0);
         return (m.length == 0) ? 0 : m[0].length;
     }
 
-    private boolean canPlaceAt(Board board, Tetromino t, int rot, int row, int col) {
-        int[][] m = t.shape(rot);
-        for (int r = 0; r < m.length; r++) {
-            for (int c = 0; c < m[r].length; c++) if (m[r][c] != 0) {
-                int br = row + r, bc = col + c;
-                if (br < 0 || br >= GameConfig.get().rows() || bc < 0 || bc >= GameConfig.get().cols()) return false;
+    private boolean canPlaceAt(Board board, Tetromino t, int col) {
+        int[][] m = t.shape(0);
+        for (int br = 0; br < m.length; br++) {
+            for (int c = 0; c < m[br].length; c++) if (m[br][c] != 0) {
+                int bc = col + c;
+                if (br >= GameConfig.get().rows() || bc < 0 || bc >= GameConfig.get().cols()) return false;
                 if (board.get(br, bc) != 0) return false;
             }
         }
