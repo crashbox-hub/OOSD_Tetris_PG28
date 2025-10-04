@@ -167,7 +167,7 @@ public class ConfigurationView extends AbstractScreen {
 
 
         // Extend Mode toggle (persisted)
-        row = addToggleRow(grid, row, "Extend Mode (On/Off):", cfg.isExtendModeEnabled(), isSel -> {
+        addToggleRow(grid, row, "Extend Mode (On/Off):", cfg.isExtendModeEnabled(), isSel -> {
             cfg.setExtendModeEnabled(isSel);
             SettingsStore.save(cfg);
             refreshSliderBounds.run();
