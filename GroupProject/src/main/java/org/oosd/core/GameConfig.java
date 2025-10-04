@@ -5,6 +5,11 @@ public final class GameConfig {
 
     /* ---------------- Defaults & bounds ---------------- */
 
+    // Extended limits (when Extend Mode is ON)
+    public static final int EXT_MAX_COLS_1P = 30;
+    public static final int EXT_MAX_ROWS_1P = 30;
+    public static final int EXT_MAX_COLS_2P = 25;  // a bit tighter so 2 boards still fit
+    public static final int EXT_MAX_ROWS_2P = 25;
     // Single-player board bounds
     public static final int MIN_COLS_1P = 6;
     public static final int MAX_COLS_1P = 25;
@@ -110,14 +115,6 @@ public final class GameConfig {
     public void setAiP1Enabled(boolean v)  { aiP1Enabled = v; }
     public void setAiP2Enabled(boolean v)  { aiP2Enabled = v; }
 
-    //Extend Mode setter.
-    public void setExtendModeEnabled() {
-        // Extend Mode flag
-        rows = clamp(rows, currentMinRows(), currentMaxRows());
-        cols = clamp(cols, currentMinCols(), currentMaxCols());
-        spawnCol = clamp(spawnCol, 0, Math.max(0, cols - 1));
-    }
-
     /* ---------------- Helpers ---------------- */
 
     private int currentMinCols() {
@@ -125,13 +122,19 @@ public final class GameConfig {
         return (players == 2) ? MIN_COLS_2P : MIN_COLS_1P;
     }
     private int currentMaxCols() {
-        return (players == 2) ? MAX_COLS_2P : MAX_COLS_1P;
+        if (players == 2) {
+            return extendModeEnabled ? EXT_MAX_COLS_2P : MAX_COLS_2P;
+        }
+        return extendModeEnabled ? EXT_MAX_COLS_1P : MAX_COLS_1P;
     }
     private int currentMinRows() {
         return (players == 2) ? MIN_ROWS_2P : MIN_ROWS_1P;
     }
     private int currentMaxRows() {
-        return (players == 2) ? MAX_ROWS_2P : MAX_ROWS_1P;
+        if (players == 2) {
+            return extendModeEnabled ? EXT_MAX_ROWS_2P : MAX_ROWS_2P;
+        }
+        return extendModeEnabled ? EXT_MAX_ROWS_1P : MAX_ROWS_1P;
     }
 
     private static int clamp(int v, int lo, int hi) {
@@ -140,6 +143,11 @@ public final class GameConfig {
 
     // getter/setter extend mode
     public boolean isExtendModeEnabled() { return extendModeEnabled; }
-    public void setExtendModeEnabled(boolean enabled) { extendModeEnabled = enabled; }
+    public void setExtendModeEnabled(boolean enabled) {
+        extendModeEnabled = enabled;
+        rows     = clamp(rows, currentMinRows(), currentMaxRows());
+        cols     = clamp(cols, currentMinCols(), currentMaxCols());
+        spawnCol = clamp(spawnCol, 0, Math.max(0, cols - 1));
+    }
 }
 
