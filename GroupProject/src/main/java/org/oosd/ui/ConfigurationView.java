@@ -48,29 +48,58 @@ public class ConfigurationView extends AbstractScreen {
 
         int row = 0;
 
-        // --- Width (6..30) ---
-        Label widthLbl = label("Field Width (No of cells):");
-        Slider width = slider(6, 30, cfg.cols());
-        Label widthVal = valueLabel(width);
+        // --- Width / Height with dynamic bounds tied to Extend Mode ---
+        Label widthLbl  = label("Field Width (No of cells):");
+// seed; real min/max will be set immediately after
+        Slider width    = slider(GameConfig.MIN_COLS_1P, GameConfig.EXT_MAX_COLS_1P, cfg.cols());
+        Label widthVal  = valueLabel(width);
+
+        Label heightLbl = label("Field Height (No of cells):");
+// seed; real min/max will be set immediately after
+        Slider height   = slider(GameConfig.MIN_ROWS_1P, GameConfig.EXT_MAX_ROWS_1P, cfg.rows());
+        Label heightVal = valueLabel(height);
+
+// keep config in sync with slider motion
         width.valueProperty().addListener((obs, o, n) -> {
-            int v = n.intValue();
-            cfg.setCols(v);
+            cfg.setCols(n.intValue());
             SettingsStore.save(cfg);
         });
+        height.valueProperty().addListener((obs, o, n) -> {
+            cfg.setRows(n.intValue());
+            SettingsStore.save(cfg);
+        });
+
+// helper: recompute min/max from current cfg + extend mode (no other changes)
+        Runnable refreshSliderBounds = () -> {
+            int minCols = (cfg.players() == 2) ? GameConfig.MIN_COLS_2P : GameConfig.MIN_COLS_1P;
+            int minRows = (cfg.players() == 2) ? GameConfig.MIN_ROWS_2P : GameConfig.MIN_ROWS_1P;
+
+            int maxCols = (cfg.players() == 2)
+                    ? (cfg.isExtendModeEnabled() ? GameConfig.EXT_MAX_COLS_2P : GameConfig.MAX_COLS_2P)
+                    : (cfg.isExtendModeEnabled() ? GameConfig.EXT_MAX_COLS_1P : GameConfig.MAX_COLS_1P);
+
+            int maxRows = (cfg.players() == 2)
+                    ? (cfg.isExtendModeEnabled() ? GameConfig.EXT_MAX_ROWS_2P : GameConfig.MAX_ROWS_2P)
+                    : (cfg.isExtendModeEnabled() ? GameConfig.EXT_MAX_ROWS_1P : GameConfig.MAX_ROWS_1P);
+
+            width.setMin(minCols);  width.setMax(maxCols);
+            height.setMin(minRows); height.setMax(maxRows);
+
+            // reflect any clamping done inside cfg after limits change
+            width.setValue(cfg.cols());
+            height.setValue(cfg.rows());
+        };
+
+// add to grid (unchanged)
         grid.add(widthLbl, 0, row); grid.add(width, 1, row);
         grid.add(widthVal, 2, row++); GridPane.setHalignment(widthVal, HPos.RIGHT);
 
-        // --- Height (15..30) ---
-        Label heightLbl = label("Field Height (No of cells):");
-        Slider height = slider(15, 30, cfg.rows());
-        Label heightVal = valueLabel(height);
-        height.valueProperty().addListener((obs, o, n) -> {
-            int v = n.intValue();
-            cfg.setRows(v);
-            SettingsStore.save(cfg);
-        });
         grid.add(heightLbl, 0, row); grid.add(height, 1, row);
         grid.add(heightVal, 2, row++); GridPane.setHalignment(heightVal, HPos.RIGHT);
+
+// initial sync with current extend-mode state
+        refreshSliderBounds.run();
+
 
         // --- Game Level (maps to gravityCps) ---
         Label levelLbl = label("Game Level:");
@@ -141,6 +170,7 @@ public class ConfigurationView extends AbstractScreen {
         row = addToggleRow(grid, row, "Extend Mode (On/Off):", cfg.isExtendModeEnabled(), isSel -> {
             cfg.setExtendModeEnabled(isSel);
             SettingsStore.save(cfg);
+            refreshSliderBounds.run();
         });
 
 
