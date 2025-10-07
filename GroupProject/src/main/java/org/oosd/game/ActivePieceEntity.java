@@ -3,9 +3,10 @@ package org.oosd.game;
 import java.util.Random;
 
 /*
-Falling piece driven by dt-based gravity.
-  - When a downward step is blocked, the piece locks to the board and marks itself dead.
-  - Exposes softDropOrLock() so UI can do a single-step soft drop safely.
+Falling piece entity.
+Gravity is driven externally by GameView.enforceGravity(...), NOT by dt here.
+We keep process(dt) side-effect free (just syncs x/y to state) to avoid
+"catch-up" jumps after pausing/unpausing.
  */
 public class ActivePieceEntity extends GameEntity {
     private final Board board;
@@ -28,35 +29,18 @@ public class ActivePieceEntity extends GameEntity {
 
     @Override
     protected void process(double dt) {
-        // gravity: cells/sec
-        double gravity = org.oosd.core.GameConfig.get().gravityCps();
-        double newY = y + gravity * dt;
-
-        // Each time we cross an integral row boundary, try to move down 1 cell.
-        while (Math.floor(newY) > Math.floor(y)) {
-            if (!tryMove(1, 0, 0)) {    // cannot go down → lock & die
-                lockToBoard();
-                kill();
-                return;
-            }
-        }
-        y = newY;
+        // IMPORTANT: no dt-based gravity here. Gravity is enforced by GameView.enforceGravity().
+        // Just keep entity's x/y in sync with the logical state.
+        this.x = state.col();
+        this.y = state.row();
     }
 
     /* --------- input helpers ---------- */
-    public void tryRotateCW()  {
-        tryMove(0, 0, +1);
-    }
-    public void tryLeft()      {
-        tryMove(0, -1, 0);
-    }
-    public void tryRight()     {
-        tryMove(0, +1, 0);
-    }
+    public void tryRotateCW()  { tryMove(0, 0, +1); }
+    public void tryLeft()      { tryMove(0, -1, 0); }
+    public void tryRight()     { tryMove(0, +1, 0); }
 
-    /* One-cell soft drop. If blocked, locks to board and marks dead.
-     * @return true if moved down, false if locked.
-     */
+    /* One-cell soft drop. If blocked, locks to board and marks dead. */
     public boolean softDropOrLock() {
         if (tryMove(1, 0, 0)) return true;
         lockToBoard();
@@ -64,10 +48,7 @@ public class ActivePieceEntity extends GameEntity {
         return false;
     }
 
-    /**
-     * Attempts to move the piece down one cell without locking.
-     * @return true if moved down successfully, false if blocked.
-     */
+    /** Manual soft drop for player input; does NOT lock when blocked. */
     public boolean softDrop() {
         return tryMove(1, 0, 0);
     }
