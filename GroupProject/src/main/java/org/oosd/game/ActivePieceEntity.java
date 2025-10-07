@@ -64,6 +64,14 @@ public class ActivePieceEntity extends GameEntity {
         return false;
     }
 
+    /**
+     * Attempts to move the piece down one cell without locking.
+     * @return true if moved down successfully, false if blocked.
+     */
+    public boolean softDrop() {
+        return tryMove(1, 0, 0);
+    }
+
     /* --------- core movement ---------- */
     private boolean tryMove(int dr, int dc, int drot) {
         int newRot = state.rot();

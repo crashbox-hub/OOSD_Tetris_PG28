@@ -99,10 +99,13 @@ public class GameView extends AbstractScreen {
         long lastGravityNs = 0L;
         long lastHorizNs   = 0L;
 
+        // NEW: manual soft-drop cooldown marker
+        long lastManualDropNs = 0L;
+
         Side(int id) { this.id = id; }
     }
 
-    // Return the gravity step interval (nanoseconds) based on cells-per-second. // NEW
+    // Return the gravity step interval (nanoseconds) based on cells-per-second.
     private long gravityIntervalNs() {
         double cps = Math.max(0.1, GameConfig.get().gravityCps());
         return (long) (1_000_000_000L / cps);
@@ -121,7 +124,7 @@ public class GameView extends AbstractScreen {
     private final AnimationTimer loop = new AnimationTimer() {
         @Override public void handle(long now) {
             for (Side s : sides) {
-                //  drive AI before tick when active, unpaused, not game over
+                // drive AI before tick when active, unpaused, not game over
                 if (s.ai && !s.paused && !s.gameOver) {
                     aiController.update(
                             s.id,
@@ -177,7 +180,7 @@ public class GameView extends AbstractScreen {
         getStyleClass().add("app-bg");
         setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
 
-        //  copy per-player AI flags from GameConfig
+        // copy per-player AI flags from GameConfig
         final GameConfig cfg = GameConfig.get();
 
         sides.add(new Side(1));
@@ -229,7 +232,8 @@ public class GameView extends AbstractScreen {
         applyScaling();
     }
 
-    private VBox buildSide(Side S) {
+    // CHANGED: HUD sits to the RIGHT of the board (HBox instead of VBox)
+    private HBox buildSide(Side S) {
         Label nextTitle = new Label((players == 2 ? ("PLAYER " + S.id + " — ") : "") + "NEXT");
         nextTitle.getStyleClass().add("hud-title");
 
@@ -249,7 +253,7 @@ public class GameView extends AbstractScreen {
             lbl.getStyleClass().add("hud-label");
 
         VBox hud = new VBox(12, nextTitle, S.nextBox, S.scoreLabel, S.linesLabel, S.timeLabel);
-        hud.setAlignment(Pos.CENTER);
+        hud.setAlignment(Pos.CENTER_LEFT);
 
         buildGrid(S.gridLayer);
         S.boardLayer.getChildren().add(S.gridLayer);
@@ -267,8 +271,9 @@ public class GameView extends AbstractScreen {
         S.boardSurface.getChildren().add(S.pauseOverlay);
         StackPane.setAlignment(S.pauseOverlay, Pos.CENTER);
 
-        VBox sideBox = new VBox(10, S.boardSurface, hud);
-        sideBox.setAlignment(Pos.CENTER);
+        // Return a horizontal layout: [Board][HUD]
+        HBox sideBox = new HBox(16, S.boardSurface, hud);
+        sideBox.setAlignment(Pos.CENTER_LEFT);
         return sideBox;
     }
 
@@ -373,8 +378,7 @@ public class GameView extends AbstractScreen {
     }
 
     /*  High scores: defer prompting until exit
-    Returns true if the given score would appear in the top-10 (non-zero). */
-
+       Returns true if the given score would appear in the top-10 (non-zero). */
     private boolean qualifiesForHighScore(int score) {
         if (score <= 0) return false; // never prompt for 0
         var list = HighScoreStore.load(); // sorted desc
@@ -394,7 +398,6 @@ public class GameView extends AbstractScreen {
         }
         if (onExitToMenu != null) onExitToMenu.run();
     }
-
 
     /** Blocking prompt used only on exit (safe: loop stopped). */
     private void promptHighScore(Side S) {
@@ -428,7 +431,7 @@ public class GameView extends AbstractScreen {
         if (players == 1) {
             Side s = sides.getFirst();
 
-            //  ignore human key controls if this side is AI
+            // ignore human key controls if this side is AI
             if (!s.ai) handleControls(s, e.getCode(), KeyCode.LEFT, KeyCode.RIGHT, KeyCode.UP, KeyCode.DOWN);
 
             if (e.getCode() == KeyCode.P && !s.gameOver) togglePause(s);
@@ -469,12 +472,15 @@ public class GameView extends AbstractScreen {
         if (code == left) piece.tryLeft();
         else if (code == right) piece.tryRight();
         else if (code == rot)  { piece.tryRotateCW(); if (GameConfig.get().isSfxEnabled()) Sound.playRotate(); }
-        else if (code == down) piece.softDropOrLock();
+        else if (code == down) {
+            piece.softDrop();                          // manual drop: no lock
+            S.lastManualDropNs = System.nanoTime();    // start cooldown for gravity
+        }
     }
 
     /* ----------  simple AI driver per side ---------- */
 
-    // Simple tempo values tuned for  bot
+    // Simple tempo values tuned for bot
     private static final long AI_MOVE_INTERVAL_NS   = 180_000_000L;   // ~0.18s
     private static final long AI_DROP_INTERVAL_NS   = 350_000_000L;   // ~0.35s
     private static final long AI_ROTATE_INTERVAL_NS = 2_000_000_000L; // ~2.0s
@@ -697,10 +703,13 @@ public class GameView extends AbstractScreen {
         anim.play();
     }
 
-    // Force a down step or lock at fixed wall-clock intervals.                     // NEW
+    // Force a down step or lock at fixed wall-clock intervals.
     private void enforceGravity(Side S, long now) {
         if (S.paused || S.gameOver) return;
         if (now - S.lastGravityNs < gravityIntervalNs()) return;
+
+        // NEW: if the player manually soft-dropped very recently, skip this gravity tick
+        if (now - S.lastManualDropNs < 100_000_000L) return; // ~100ms
 
         ActivePieceEntity piece = S.entities.stream()
                 .filter(ge -> ge.entityType() == EntityType.ACTIVE_PIECE)
@@ -711,10 +720,6 @@ public class GameView extends AbstractScreen {
         piece.softDropOrLock();
         S.lastGravityNs = now;
     }
-
-
-
-
 
     private Color colorFor(int id) {
         return switch (id) {
